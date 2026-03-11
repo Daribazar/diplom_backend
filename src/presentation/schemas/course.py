@@ -10,6 +10,7 @@ class CourseCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=20)
     semester: str = Field(..., min_length=1, max_length=50)
     instructor: Optional[str] = Field(None, max_length=200)
+    color: Optional[str] = Field("indigo", max_length=20)
     
     class Config:
         json_schema_extra = {
@@ -17,7 +18,8 @@ class CourseCreate(BaseModel):
                 "name": "Introduction to Machine Learning",
                 "code": "CS401",
                 "semester": "Fall 2024",
-                "instructor": "Prof. Smith"
+                "instructor": "Prof. Smith",
+                "color": "indigo"
             }
         }
 
@@ -36,6 +38,7 @@ class CourseResponse(BaseModel):
     code: str
     semester: str
     instructor: Optional[str]
+    color: str
     owner_id: str
     created_at: datetime
     

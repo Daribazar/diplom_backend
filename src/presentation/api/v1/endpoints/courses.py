@@ -49,7 +49,8 @@ async def create_course(
         code=course_data.code,
         semester=course_data.semester,
         owner_id=current_user.id,
-        instructor=course_data.instructor
+        instructor=course_data.instructor,
+        color=course_data.color
     )
     
     return CourseResponse(
@@ -58,6 +59,7 @@ async def create_course(
         code=course.code,
         semester=course.semester,
         instructor=course.instructor,
+        color=course.color,
         owner_id=course.owner_id,
         created_at=course.created_at
     )
@@ -88,6 +90,7 @@ async def get_courses(
                 code=c.code,
                 semester=c.semester,
                 instructor=c.instructor,
+                color=c.color,
                 owner_id=c.owner_id,
                 created_at=c.created_at
             )
@@ -120,6 +123,7 @@ async def get_course(
             code=course.code,
             semester=course.semester,
             instructor=course.instructor,
+            color=course.color,
             owner_id=course.owner_id,
             created_at=course.created_at
         )
@@ -160,6 +164,7 @@ async def update_course(
             code=course.code,
             semester=course.semester,
             instructor=course.instructor,
+            color=course.color,
             owner_id=course.owner_id,
             created_at=course.created_at
         )

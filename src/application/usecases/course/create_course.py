@@ -17,7 +17,8 @@ class CreateCourseUseCase:
         code: str,
         semester: str,
         owner_id: str,
-        instructor: str = None
+        instructor: str = None,
+        color: str = "indigo"
     ) -> Course:
         """
         Create new course.
@@ -32,6 +33,7 @@ class CreateCourseUseCase:
             semester: Semester (e.g., Fall 2024)
             owner_id: User ID of course owner
             instructor: Optional instructor name
+            color: Course color for UI display
             
         Returns:
             Created Course entity
@@ -43,7 +45,8 @@ class CreateCourseUseCase:
             code=code,
             semester=semester,
             owner_id=owner_id,
-            instructor=instructor
+            instructor=instructor,
+            color=color
         )
         
         # Persist to database

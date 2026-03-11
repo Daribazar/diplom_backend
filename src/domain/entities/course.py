@@ -14,6 +14,7 @@ class Course:
     semester: str
     owner_id: str
     instructor: Optional[str] = None
+    color: str = "indigo"
     created_at: Optional[datetime] = None
     
     def update_instructor(self, instructor_name: str) -> None:

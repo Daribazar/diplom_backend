@@ -15,6 +15,7 @@ class CourseModel(Base, TimestampMixin):
     code = Column(String(20), nullable=False)
     semester = Column(String(50), nullable=False)
     instructor = Column(String(200), nullable=True)
+    color = Column(String(20), nullable=False, default="indigo")
     owner_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Relationships

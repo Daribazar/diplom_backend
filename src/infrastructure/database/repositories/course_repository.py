@@ -22,6 +22,7 @@ class CourseRepository:
             code=course.code,
             semester=course.semester,
             instructor=course.instructor,
+            color=course.color,
             owner_id=course.owner_id
         )
         self.session.add(db_course)
@@ -87,5 +88,6 @@ class CourseRepository:
             semester=db_model.semester,
             owner_id=db_model.owner_id,
             instructor=db_model.instructor,
+            color=db_model.color,
             created_at=db_model.created_at
         )
