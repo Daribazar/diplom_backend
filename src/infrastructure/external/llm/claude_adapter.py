@@ -15,9 +15,7 @@ class ClaudeAdapter(ILLMAdapter):
     
     def __init__(self, api_key: Optional[str] = None):
         """Initialize Claude adapter."""
-        self.client = AsyncAnthropic(
-            api_key=api_key or settings.ANTHROPIC_API_KEY
-        )
+        self.api_key = api_key or settings.ANTHROPIC_API_KEY
         self.default_model = "claude-sonnet-4-20250514"
     
     async def complete(
@@ -44,7 +42,10 @@ class ClaudeAdapter(ILLMAdapter):
             Standardized LLMResponse
         """
         try:
-            response = await self.client.messages.create(
+            # Create client for each request to avoid async issues
+            client = AsyncAnthropic(api_key=self.api_key)
+            
+            response = await client.messages.create(
                 model=model or self.default_model,
                 max_tokens=max_tokens,
                 temperature=temperature,

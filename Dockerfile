@@ -17,7 +17,7 @@ COPY pyproject.toml ./
 # Configure poetry and install dependencies
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root \
-    && pip install email-validator aiofiles bcrypt==4.0.1
+    && pip install --upgrade anthropic email-validator aiofiles bcrypt==4.0.1
 
 # Copy application code
 COPY . .
