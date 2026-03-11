@@ -6,13 +6,13 @@ import os
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from src.4_infrastructure.database.connection import async_session_maker
-from src.4_infrastructure.database.repositories.user_repository import UserRepository
-from src.4_infrastructure.database.repositories.course_repository import CourseRepository
-from src.4_infrastructure.database.repositories.lecture_repository import LectureRepository
-from src.3_domain.entities.user import User
-from src.3_domain.entities.course import Course
-from src.3_domain.entities.lecture import Lecture
+from src.infrastructure.database.connection import async_session_maker
+from src.infrastructure.database.repositories.user_repository import UserRepository
+from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.infrastructure.database.repositories.lecture_repository import LectureRepository
+from src.domain.entities.user import User
+from src.domain.entities.course import Course
+from src.domain.entities.lecture import Lecture
 from src.core.security import get_password_hash
 
 

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from httpx import AsyncClient
 
 from src.main import app
-from src.4_infrastructure.database.models.base import Base
+from src.infrastructure.database.models.base import Base
 
 
 @pytest.fixture

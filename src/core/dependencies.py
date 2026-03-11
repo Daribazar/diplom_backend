@@ -3,10 +3,10 @@ from typing import AsyncGenerator, Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.4_infrastructure.database.connection import get_db as _get_db
+from src.infrastructure.database.connection import get_db as _get_db
 from src.core.security import decode_access_token
-from src.4_infrastructure.database.repositories.user_repository import UserRepository
-from src.3_domain.entities.user import User
+from src.infrastructure.database.repositories.user_repository import UserRepository
+from src.domain.entities.user import User
 
 # Security scheme
 security = HTTPBearer()

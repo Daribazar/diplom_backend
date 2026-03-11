@@ -1,6 +1,6 @@
 """Test Celery setup."""
 import asyncio
-from src.4_infrastructure.queue.tasks.lecture_processing import test_celery_task
+from src.infrastructure.queue.tasks.lecture_processing import test_celery_task
 
 
 def test_simple_task():

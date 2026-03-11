@@ -9,16 +9,19 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from src.config import settings
-from src.4_infrastructure.database.models.base import Base
+
+# Import using getattr to handle numeric folder names
+import importlib
+infrastructure = importlib.import_module('src.infrastructure.database.models.base')
+Base = infrastructure.Base
 
 # Import all models for autogenerate
-from src.4_infrastructure.database.models import (
-    UserModel,
-    CourseModel,
-    LectureModel,
-    TestModel,
-    StudentAttemptModel
-)
+models = importlib.import_module('src.infrastructure.database.models')
+UserModel = models.UserModel
+CourseModel = models.CourseModel
+LectureModel = models.LectureModel
+TestModel = models.TestModel
+StudentAttemptModel = models.StudentAttemptModel
 
 # Alembic Config
 config = context.config
@@ -62,9 +65,15 @@ def do_run_migrations(connection):
 
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
+    from sqlalchemy.ext.asyncio import create_async_engine
+    
+    # Get database URL and ensure it uses asyncpg
+    db_url = config.get_main_option("sqlalchemy.url")
+    if not db_url.startswith("postgresql+asyncpg"):
+        db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
+    
+    connectable = create_async_engine(
+        db_url,
         poolclass=pool.NullPool,
     )
 

@@ -45,6 +45,33 @@ Production-ready AI Study Assistant backend system using Python, FastAPI, and Po
 
 ## Quick Start
 
+### 🚀 Компьютер Унтраагаад Дахин Асаахад
+
+**Дэлгэрэнгүй заавар:** `STARTUP_GUIDE.md` файлыг үзнэ үү.
+
+**Хурдан эхлүүлэх:**
+
+```bash
+# 1. Системийн статус шалгах
+./startup.sh
+
+# 2. Terminal 1 - FastAPI Server
+cd ~/Documents/diplom/study-assistant-backend
+source venv/bin/activate
+uvicorn src.main:app --reload --port 8000
+
+# 3. Terminal 2 - Celery Worker
+cd ~/Documents/diplom/study-assistant-backend
+source venv/bin/activate
+celery -A src.infrastructure.queue.celery_app worker --loglevel=info
+```
+
+**Шалгах:**
+- API Docs: http://127.0.0.1:8000/api/docs
+- Health: http://127.0.0.1:8000/health
+
+---
+
 ### 1. Install Dependencies
 
 ```bash

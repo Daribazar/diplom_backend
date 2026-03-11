@@ -8,8 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sqlalchemy.ext.asyncio import create_async_engine
 from src.config import settings
-from src.4_infrastructure.database.models.base import Base
-from src.4_infrastructure.database.models import (
+from src.infrastructure.database.models.base import Base
+from src.infrastructure.database.models import (
     UserModel,
     CourseModel,
     LectureModel,

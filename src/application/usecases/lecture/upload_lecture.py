@@ -1,0 +1,120 @@
+"""Upload lecture use case."""
+import uuid
+from src.domain.entities.lecture import Lecture
+from src.infrastructure.database.repositories.lecture_repository import LectureRepository
+from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.domain.interfaces.storage_service import IStorageService
+from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
+
+
+class UploadLectureUseCase:
+    """Use case: Upload lecture file."""
+    
+    def __init__(
+        self,
+        lecture_repository: LectureRepository,
+        course_repository: CourseRepository,
+        storage_service: IStorageService
+    ):
+        """Initialize use case with repositories and storage."""
+        self.lecture_repo = lecture_repository
+        self.course_repo = course_repository
+        self.storage = storage_service
+    
+    async def execute(
+        self,
+        course_id: str,
+        week_number: int,
+        title: str,
+        file_data: bytes,
+        filename: str,
+        user_id: str
+    ) -> Lecture:
+        """
+        Upload lecture file.
+        
+        Business rules:
+        - User must own the course
+        - No duplicate lectures per week
+        - File must be PDF
+        
+        Args:
+            course_id: Course ID
+            week_number: Week number (1-16)
+            title: Lecture title
+            file_data: File content as bytes
+            filename: Original filename
+            user_id: User ID uploading
+            
+        Returns:
+            Created Lecture entity
+            
+        Raises:
+            NotFoundError: If course doesn't exist
+            UnauthorizedError: If user doesn't own course
+            DuplicateError: If lecture already exists for week
+        """
+        # Check course exists and user owns it
+        course = await self.course_repo.get_by_id(course_id)
+        
+        if not course:
+            raise NotFoundError(f"Course {course_id} not found")
+        
+        if course.owner_id != user_id:
+            raise UnauthorizedError("You don't own this course")
+        
+        # Check no duplicate
+        existing = await self.lecture_repo.get_by_course_and_week(
+            course_id, week_number
+        )
+        
+        if existing:
+            raise DuplicateError(
+                f"Lecture already exists for week {week_number}"
+            )
+        
+        # Upload file to storage
+        file_url = await self.storage.upload(
+            file_data=file_data,
+            filename=f"lecture_w{week_number}_{uuid.uuid4().hex[:8]}.pdf",
+            folder=f"courses/{course_id}/lectures"
+        )
+        
+        # Extract text from PDF
+        content = ""
+        try:
+            import io
+            from pypdf import PdfReader
+            
+            pdf_file = io.BytesIO(file_data)
+            pdf_reader = PdfReader(pdf_file)
+            
+            # Extract text from all pages
+            for page in pdf_reader.pages:
+                content += page.extract_text() + "\n"
+            
+            content = content.strip()
+        except Exception as e:
+            # If PDF extraction fails, continue without content
+            # Processing will fail but lecture will be saved
+            content = ""
+        
+        # Create lecture entity
+        lecture = Lecture(
+            id=f"lec_{uuid.uuid4().hex[:12]}",
+            course_id=course_id,
+            week_number=week_number,
+            title=title,
+            file_url=file_url,
+            content=content,
+            status="pending"
+        )
+        
+        # Save to database
+        created_lecture = await self.lecture_repo.create(lecture)
+        
+        # Trigger background processing with Celery
+        from src.infrastructure.queue.tasks.lecture_processing import process_lecture_task
+        process_lecture_task.delay(lecture_id=created_lecture.id)
+        
+        return created_lecture

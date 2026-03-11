@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sqlalchemy import text
-from src.4_infrastructure.database.connection import async_session_maker
+from src.infrastructure.database.connection import async_session_maker
 from src.config import settings
 
 
