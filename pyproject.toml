@@ -8,8 +8,10 @@ authors = ["Your Name <your.email@example.com>"]
 python = "^3.11"
 fastapi = "^0.109.0"
 uvicorn = {extras = ["standard"], version = "^0.27.0"}
-pydantic = "^2.5.0"
+pydantic = {extras = ["email"], version = "^2.5.0"}
 pydantic-settings = "^2.1.0"
+email-validator = "^2.1.0"
+aiofiles = "^23.2.1"
 sqlalchemy = {extras = ["asyncio"], version = "^2.0.25"}
 asyncpg = "^0.29.0"
 alembic = "^1.13.0"
