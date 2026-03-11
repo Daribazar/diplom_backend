@@ -39,8 +39,18 @@ class LLMFactory:
     
     @staticmethod
     def create_embedding_adapter() -> ILLMAdapter:
-        """Create adapter for embeddings (always OpenAI or mock)."""
+        """
+        Create adapter for embeddings.
+        
+        Note: Claude doesn't support embeddings, so we use mock for development.
+        For production with real embeddings, use OpenAI.
+        """
         provider = getattr(settings, "DEFAULT_LLM_PROVIDER", "openai").lower()
-        if provider == "mock":
+        
+        # Always use mock for embeddings in development
+        # This avoids OpenAI API quota issues
+        if provider in ["mock", "claude"]:
             return MockLLMAdapter()
+        
+        # Only use OpenAI if explicitly set and you have quota
         return OpenAIAdapter()

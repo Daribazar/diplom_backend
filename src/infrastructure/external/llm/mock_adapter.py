@@ -48,36 +48,83 @@ class MockLLMAdapter(ILLMAdapter):
             })
         
         elif "generate" in prompt_lower and "question" in prompt_lower:
+            # Generate questions in the format expected by test_generator_agent
             content = json.dumps({
-                "mcq": [
+                "questions": [
                     {
-                        "question": "What is a neural network?",
+                        "question_id": "q1",
+                        "type": "mcq",
+                        "question_text": "Нейрон сүлжээ гэж юу вэ?",
                         "options": [
-                            "A biological system",
-                            "A computing system inspired by biological neural networks",
-                            "A type of database",
-                            "A programming language"
+                            "Биологийн систем",
+                            "Биологийн нейрон сүлжээнээс санаа авсан тооцооллын систем",
+                            "Өгөгдлийн сангийн төрөл",
+                            "Программчлалын хэл"
                         ],
-                        "correct_answer": "B",
-                        "explanation": "Neural networks are computing systems inspired by biological neural networks."
-                    }
-                ],
-                "true_false": [
+                        "correct_answer": "Биологийн нейрон сүлжээнээс санаа авсан тооцооллын систем",
+                        "points": 2,
+                        "difficulty": "easy",
+                        "bloom_level": "remember",
+                        "explanation": "Нейрон сүлжээ нь биологийн нейрон сүлжээнээс санаа авсан тооцооллын систем юм."
+                    },
                     {
-                        "question": "Neural networks can learn from data.",
-                        "correct_answer": "True",
-                        "explanation": "Neural networks use training data to adjust their weights and improve performance."
-                    }
-                ],
-                "essay": [
+                        "question_id": "q2",
+                        "type": "mcq",
+                        "question_text": "Нейрон сүлжээний үндсэн бүрэлдэхүүн хэсэг юу вэ?",
+                        "options": [
+                            "Нейрон (node)",
+                            "Холболт (connection)",
+                            "Жин (weight)",
+                            "Бүгд зөв"
+                        ],
+                        "correct_answer": "Бүгд зөв",
+                        "points": 2,
+                        "difficulty": "medium",
+                        "bloom_level": "understand",
+                        "explanation": "Нейрон сүлжээ нь нейрон, холболт, жингээс бүрдэнэ."
+                    },
                     {
-                        "question": "Explain how backpropagation works in neural networks.",
-                        "key_points": [
-                            "Forward pass computation",
-                            "Error calculation",
-                            "Gradient computation",
-                            "Weight updates"
-                        ]
+                        "question_id": "q3",
+                        "type": "true_false",
+                        "question_text": "Нейрон сүлжээ өгөгдлөөс суралцах чадвартай.",
+                        "options": ["Үнэн", "Худал"],
+                        "correct_answer": "Үнэн",
+                        "points": 1,
+                        "difficulty": "easy",
+                        "bloom_level": "remember",
+                        "explanation": "Нейрон сүлжээ сургалтын өгөгдлийг ашиглан жингээ тохируулж, гүйцэтгэлээ сайжруулдаг."
+                    },
+                    {
+                        "question_id": "q4",
+                        "type": "mcq",
+                        "question_text": "Activation function-ий үүрэг юу вэ?",
+                        "options": [
+                            "Өгөгдлийг хадгалах",
+                            "Нейроны гаралтыг тооцоолох",
+                            "Сүлжээг сургах",
+                            "Алдааг тооцоолох"
+                        ],
+                        "correct_answer": "Нейроны гаралтыг тооцоолох",
+                        "points": 2,
+                        "difficulty": "medium",
+                        "bloom_level": "apply",
+                        "explanation": "Activation function нь нейроны оролтыг боловсруулж гаралт үүсгэдэг."
+                    },
+                    {
+                        "question_id": "q5",
+                        "type": "mcq",
+                        "question_text": "Backpropagation алгоритм юу хийдэг вэ?",
+                        "options": [
+                            "Өгөгдлийг урьдчилан таамаглах",
+                            "Алдааг буцааж дамжуулж жингийг шинэчлэх",
+                            "Өгөгдлийг цэвэрлэх",
+                            "Сүлжээний бүтцийг өөрчлөх"
+                        ],
+                        "correct_answer": "Алдааг буцааж дамжуулж жингийг шинэчлэх",
+                        "points": 3,
+                        "difficulty": "hard",
+                        "bloom_level": "analyze",
+                        "explanation": "Backpropagation нь алдааг буцааж дамжуулж gradient тооцоолон жингийг шинэчилдэг."
                     }
                 ]
             })

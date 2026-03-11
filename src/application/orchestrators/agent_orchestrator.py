@@ -74,14 +74,17 @@ class AgentOrchestrator:
             content=content
         )
         
-        # Step 3: Update lecture in database
+        # Step 3: Update lecture in database using repository update method
         db_lecture = await self.lecture_repo.get_by_id(lecture_id)
         if db_lecture:
+            # Update entity fields
             db_lecture.status = "completed"
             db_lecture.content = content
             db_lecture.key_concepts = analysis["key_concepts"]
             db_lecture.embedding_ids = embedding_ids
-            # Note: Commit is handled by the caller (Celery task)
+            
+            # Save to database
+            await self.lecture_repo.update(db_lecture)
         
         return {
             "lecture_id": lecture_id,

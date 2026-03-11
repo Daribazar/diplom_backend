@@ -139,7 +139,7 @@ async def get_test(
     if not test:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Test not found"
+            detail="Тест олдсонгүй"
         )
     
     # Verify ownership
@@ -149,7 +149,7 @@ async def get_test(
         if not course or course.owner_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Хандах эрхгүй байна"
             )
     
     return TestResponse(
@@ -186,7 +186,7 @@ async def get_lecture_tests(
     if not lecture:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lecture not found"
+            detail="Лекц олдсонгүй"
         )
     
     course = await course_repo.get_by_id(lecture.course_id)

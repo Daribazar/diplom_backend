@@ -74,10 +74,10 @@ class GenerateTestUseCase:
         course = await self.course_repo.get_by_id(course_id)
         
         if not course:
-            raise NotFoundError(f"Course {course_id} not found")
+            raise NotFoundError(f"Хичээл олдсонгүй: {course_id}")
         
         if course.owner_id != user_id:
-            raise UnauthorizedError("You don't own this course")
+            raise UnauthorizedError("Та энэ хичээлийн эзэн биш байна")
         
         # Check lecture exists and is processed
         lecture = await self.lecture_repo.get_by_course_and_week(
@@ -85,11 +85,11 @@ class GenerateTestUseCase:
         )
         
         if not lecture:
-            raise NotFoundError(f"No lecture found for week {week_number}")
+            raise NotFoundError(f"{week_number}-р долоо хоногийн лекц олдсонгүй")
         
         if lecture.status != "completed":
             raise ValueError(
-                f"Lecture not ready for test generation. Status: {lecture.status}"
+                f"Лекц боловсруулагдаагүй байна. Статус: {lecture.status}"
             )
         
         # Parse parameters
@@ -101,12 +101,18 @@ class GenerateTestUseCase:
         question_type_enums = [QuestionType(qt) for qt in question_types]
         
         # Generate test (AI Agent with RAG)
+        print(f"[GenerateTestUseCase] Generating test for lecture {lecture.id}")
+        print(f"[GenerateTestUseCase] Parameters: difficulty={difficulty}, types={question_types}, count={question_count}")
+        
         result = await self.generator.generate_test(
             lecture_ids=[lecture.id],
             difficulty=difficulty_enum,
             question_types=question_type_enums,
             question_count=question_count
         )
+        
+        print(f"[GenerateTestUseCase] Generated {len(result.questions)} questions")
+        print(f"[GenerateTestUseCase] Total points: {result.total_points}")
         
         # Create Test entity
         test = Test(

@@ -7,6 +7,7 @@ from src.infrastructure.queue.celery_app import celery_app
 from src.infrastructure.database.connection import async_session_maker
 from src.application.orchestrators.agent_orchestrator import AgentOrchestrator
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
+from src.infrastructure.database.models.lecture import LectureModel
 
 logger = get_task_logger(__name__)
 
@@ -75,11 +76,12 @@ async def process_lecture_task(self, lecture_id: str):
             # Commit all changes made by orchestrator
             await session.commit()
             
-            # Verify the update
-            await session.refresh(db_lecture)
+            # Verify the update by querying again
+            db_lecture_updated = await lecture_repo.get_by_id(lecture_id)
+            
             logger.info(f"Lecture processing completed: {lecture_id}")
-            logger.info(f"Final status: {db_lecture.status}")
-            logger.info(f"Key concepts: {db_lecture.key_concepts}")
+            logger.info(f"Final status: {db_lecture_updated.status if db_lecture_updated else 'unknown'}")
+            logger.info(f"Key concepts count: {len(db_lecture_updated.key_concepts) if db_lecture_updated else 0}")
             
             return {
                 "lecture_id": lecture_id,

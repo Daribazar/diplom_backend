@@ -72,7 +72,7 @@ async def submit_test(
         # Execute evaluation
         attempt = await use_case.execute(
             test_id=test_id,
-            student_id=current_user.id,
+            user_id=current_user.id,  # Changed from student_id to user_id
             answers=request.answers
         )
         
@@ -128,14 +128,14 @@ async def get_attempt_result(
     if not attempt:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Attempt not found"
+            detail="Оролдлого олдсонгүй"
         )
     
     # Check ownership
     if attempt.student_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            detail="Хандах эрхгүй байна"
         )
     
     return EvaluationResponse(

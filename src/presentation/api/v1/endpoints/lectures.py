@@ -118,7 +118,7 @@ async def get_course_lectures(
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found"
+            detail="Хичээл олдсонгүй"
         )
     
     if course.owner_id != current_user.id:
@@ -225,7 +225,7 @@ async def get_lecture_status(
     if not lecture:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lecture not found"
+            detail="Лекц олдсонгүй"
         )
     
     # Check course access

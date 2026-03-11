@@ -24,6 +24,10 @@ class TestRepository:
         Returns:
             Created test
         """
+        print(f"[TestRepository] Creating test {test.id}")
+        print(f"[TestRepository] Questions count: {len(test.questions) if test.questions else 0}")
+        print(f"[TestRepository] Questions data: {test.questions[:2] if test.questions else 'None'}")  # First 2 questions
+        
         db_test = TestModel(
             id=test.id,
             lecture_id=test.lecture_id,
@@ -37,6 +41,8 @@ class TestRepository:
         self.session.add(db_test)
         await self.session.flush()
         await self.session.refresh(db_test)
+        
+        print(f"[TestRepository] Test saved. DB questions count: {len(db_test.questions) if db_test.questions else 0}")
         
         return self._to_entity(db_test)
     

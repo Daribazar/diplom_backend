@@ -33,8 +33,8 @@ class StudentAttemptRepository:
             status=attempt.status,
             answers=attempt.answers,
             weak_topics=attempt.weak_topics,
-            analytics=attempt.analytics,
-            submitted_at=attempt.submitted_at
+            analytics=attempt.analytics
+            # Note: submitted_at is not in the model, using created_at instead
         )
         
         self.session.add(db_attempt)
@@ -84,5 +84,5 @@ class StudentAttemptRepository:
             weak_topics=db_model.weak_topics,
             analytics=db_model.analytics,
             created_at=db_model.created_at,
-            submitted_at=db_model.submitted_at
+            submitted_at=db_model.created_at  # Use created_at as submitted_at
         )

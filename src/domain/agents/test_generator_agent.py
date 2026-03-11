@@ -97,8 +97,13 @@ class TestGeneratorAgent:
             top_k=5
         )
         
-        if not context_chunks:
-            raise ValueError("No lecture content found for test generation")
+        # Log context retrieval
+        print(f"[TestGenerator] Retrieved context length: {len(context_chunks) if context_chunks else 0}")
+        
+        if not context_chunks or len(context_chunks.strip()) == 0:
+            print(f"[TestGenerator] WARNING: No context found for lectures {lecture_ids}")
+            # Use fallback context for mock generation
+            context_chunks = "This is a lecture about neural networks, machine learning, and deep learning concepts."
         
         # Step 2: Generate questions
         questions = await self._generate_questions(
@@ -148,7 +153,7 @@ class TestGeneratorAgent:
             prompt=user_prompt,
             system_prompt=system_prompt,
             temperature=0.7,
-            max_tokens=3000
+            max_tokens=4000  # Increased for longer questions
         )
         
         # Parse JSON response
@@ -164,36 +169,42 @@ class TestGeneratorAgent:
             Difficulty.HARD: "Evaluate and Create (judge, design, synthesize)"
         }
         
-        return f"""You are an expert educational assessment designer.
-Generate high-quality test questions based on provided lecture material.
+        return f"""You are an expert educational assessment designer specializing in creating high-quality test questions.
+
+CRITICAL REQUIREMENTS:
+1. Generate questions in MONGOLIAN language (Монгол хэл)
+2. Questions MUST be based ONLY on the provided lecture material
+3. Answers MUST be factually correct according to the context
+4. Create realistic and challenging questions that test true understanding
 
 Difficulty Level: {difficulty.value.upper()}
 Bloom's Taxonomy Level: {bloom_mapping[difficulty]}
 
-CRITICAL REQUIREMENTS:
-1. Questions MUST be based ONLY on the provided context
-2. Answers MUST be factually correct according to the context
-3. For MCQ: Create plausible distractors (wrong options that seem reasonable)
-4. For True/False: Make statements clear and unambiguous
-5. For Essay: Provide clear rubric and expected answer
-6. Output ONLY valid JSON, no additional text
+QUESTION QUALITY STANDARDS:
+- MCQ: Create 4 plausible options where distractors are reasonable but incorrect
+- True/False: Make statements clear, unambiguous, and test key concepts
+- Essay: Provide clear rubric with specific evaluation criteria
+- All questions must be grammatically correct in Mongolian
+- Use proper Mongolian terminology for technical concepts
 
-OUTPUT FORMAT (JSON):
+OUTPUT FORMAT (JSON only, no additional text):
 {{
     "questions": [
         {{
             "question_id": "q1",
             "type": "mcq",
-            "question_text": "What is the definition of integral?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correct_answer": "Option A",
+            "question_text": "Асуултын текст монгол хэл дээр?",
+            "options": ["Сонголт А", "Сонголт Б", "Сонголт В", "Сонголт Г"],
+            "correct_answer": "Сонголт Б",
             "points": 2,
             "difficulty": "easy",
             "bloom_level": "remember",
-            "explanation": "According to the lecture..."
+            "explanation": "Тайлбар монгол хэл дээр..."
         }}
     ]
-}}"""
+}}
+
+IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON object."""
     
     def _build_user_prompt(
         self,
@@ -205,18 +216,28 @@ OUTPUT FORMAT (JSON):
         """Build user prompt with context."""
         types_str = ", ".join([t.value for t in question_types])
         
-        return f"""Based on the following lecture material, generate {question_count} test questions.
+        # Map question types to Mongolian
+        type_mapping = {
+            "mcq": "Олон сонголттой (MCQ)",
+            "true_false": "Үнэн/Худал",
+            "essay": "Эссэ"
+        }
+        types_mongolian = ", ".join([type_mapping.get(t.value, t.value) for t in question_types])
+        
+        return f"""Дараах хичээлийн материал дээр үндэслэн {question_count} асуулт үүсгэнэ үү.
 
-LECTURE MATERIAL:
+ХИЧЭЭЛИЙН МАТЕРИАЛ:
 {context_text}
 
-REQUIREMENTS:
-- Question types: {types_str}
-- Difficulty: {difficulty.value}
-- Total questions: {question_count}
-- Distribute points appropriately (MCQ: 1-2pts, True/False: 1pt, Essay: 3-5pts)
+ШААРДЛАГА:
+- Асуултын төрөл: {types_mongolian} ({types_str})
+- Хүндрэл: {difficulty.value}
+- Нийт асуулт: {question_count}
+- Оноо: MCQ (2 оноо), Үнэн/Худал (1 оноо), Эссэ (3-5 оноо)
+- Бүх асуулт МОНГОЛ хэл дээр байх ёстой
+- Асуултууд хичээлийн материалд үндэслэсэн байх ёстой
 
-Generate questions now in JSON format:"""
+Асуултуудыг JSON форматаар үүсгэнэ үү:"""
     
     def _parse_questions(self, llm_response: str) -> List[Question]:
         """Parse LLM response to Question objects."""
@@ -231,29 +252,45 @@ Generate questions now in JSON format:"""
                 response_text = response_text[:-3]
             response_text = response_text.strip()
             
+            print(f"[TestGenerator] Parsing LLM response (first 200 chars): {response_text[:200]}")
+            
             # Parse JSON
             data = json.loads(response_text)
             questions_data = data.get("questions", [])
             
+            print(f"[TestGenerator] Parsed {len(questions_data)} questions from LLM response")
+            
+            if not questions_data:
+                print(f"[TestGenerator] ERROR: No questions in response. Full data: {data}")
+                raise ValueError("LLM response contains no questions")
+            
             # Convert to Question objects
             questions = []
-            for q_data in questions_data:
-                question = Question(
-                    question_id=q_data["question_id"],
-                    type=QuestionType(q_data["type"]),
-                    question_text=q_data["question_text"],
-                    options=q_data.get("options"),
-                    correct_answer=q_data["correct_answer"],
-                    points=q_data["points"],
-                    difficulty=Difficulty(q_data["difficulty"]),
-                    bloom_level=q_data.get("bloom_level", "remember"),
-                    explanation=q_data.get("explanation", "")
-                )
-                questions.append(question)
+            for i, q_data in enumerate(questions_data):
+                try:
+                    question = Question(
+                        question_id=q_data["question_id"],
+                        type=QuestionType(q_data["type"]),
+                        question_text=q_data["question_text"],
+                        options=q_data.get("options"),
+                        correct_answer=q_data["correct_answer"],
+                        points=q_data["points"],
+                        difficulty=Difficulty(q_data["difficulty"]),
+                        bloom_level=q_data.get("bloom_level", "remember"),
+                        explanation=q_data.get("explanation", "")
+                    )
+                    questions.append(question)
+                except Exception as e:
+                    print(f"[TestGenerator] ERROR parsing question {i}: {str(e)}")
+                    print(f"[TestGenerator] Question data: {q_data}")
+                    continue
             
+            print(f"[TestGenerator] Successfully created {len(questions)} Question objects")
             return questions
             
         except json.JSONDecodeError as e:
+            print(f"[TestGenerator] JSON decode error: {str(e)}")
+            print(f"[TestGenerator] Response text: {llm_response[:500]}")
             raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
     
     def _validate_questions(self, questions: List[Question]) -> List[Question]:

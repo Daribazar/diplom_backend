@@ -2,6 +2,14 @@
 from celery import Celery
 from src.config import settings
 
+# Import all SQLAlchemy models to ensure they're registered
+from src.infrastructure.database.models.user import UserModel
+from src.infrastructure.database.models.course import CourseModel
+from src.infrastructure.database.models.lecture import LectureModel
+from src.infrastructure.database.models.test import TestModel
+from src.infrastructure.database.models.student_attempt import StudentAttemptModel
+from src.infrastructure.database.models.embedding import LectureEmbedding
+
 # Create Celery instance
 celery_app = Celery(
     "study_assistant",

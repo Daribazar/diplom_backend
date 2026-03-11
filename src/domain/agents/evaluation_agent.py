@@ -118,7 +118,17 @@ class EvaluationAgent:
         student_answer: str
     ) -> QuestionResult:
         """Auto-grade MCQ/True-False."""
+        # Ensure student_answer is string
+        if not isinstance(student_answer, str):
+            student_answer = str(student_answer)
+        
         correct_answer = question["correct_answer"]
+        
+        # Ensure correct_answer is string
+        if not isinstance(correct_answer, str):
+            correct_answer = str(correct_answer)
+        
+        # Compare answers (case-insensitive)
         is_correct = student_answer.strip().lower() == correct_answer.strip().lower()
         points_earned = question["points"] if is_correct else 0.0
         
@@ -129,7 +139,7 @@ class EvaluationAgent:
             is_correct=is_correct,
             points_earned=points_earned,
             max_points=question["points"],
-            feedback="Correct!" if is_correct else f"Incorrect. Correct answer: {correct_answer}"
+            feedback="Зөв!" if is_correct else f"Буруу. Зөв хариулт: {correct_answer}"
         )
     
     async def _grade_essay(
@@ -138,6 +148,10 @@ class EvaluationAgent:
         student_answer: str
     ) -> QuestionResult:
         """AI-grade essay question."""
+        # Ensure student_answer is string
+        if not isinstance(student_answer, str):
+            student_answer = str(student_answer)
+        
         system_prompt = """You are an expert educational evaluator.
 Grade the student's essay answer based on the rubric provided.
 
@@ -150,7 +164,7 @@ Rubric:
 Return ONLY a JSON object:
 {
     "score": 0.0-1.0,
-    "feedback": "Detailed feedback",
+    "feedback": "Detailed feedback in Mongolian",
     "strengths": ["strength1", "strength2"],
     "improvements": ["improvement1", "improvement2"]
 }"""
