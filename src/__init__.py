@@ -1,1 +1,1 @@
-"""AI Study Assistant Backend."""
+"""Agentic AI student support system"""

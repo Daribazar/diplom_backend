@@ -22,15 +22,14 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://172.18.0.6:3000",  # Docker network
-        "*"  # Allow all for development
+        "http://172.18.0.6:3000", 
+        "*" 
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include API router
 app.include_router(api_router)
 
 
@@ -54,14 +53,12 @@ async def health(db: AsyncSession = Depends(get_db)):
     redis_status = "disconnected"
     
     try:
-        # Test database connection
         result = await db.execute(text("SELECT 1"))
         if result:
             db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
     
-    # Test Redis connection
     try:
         import redis
         r = redis.Redis(host='localhost', port=6379, db=0, socket_connect_timeout=1)

@@ -5,13 +5,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """Application settings."""
     
-    # App
-    APP_NAME: str = "AI Study Assistant"
+    APP_NAME: str = "Agentic ai student support system"
     APP_ENV: str = "development"
     DEBUG: bool = True
     SECRET_KEY: str
     
-    # Database
     DATABASE_URL: str
     DATABASE_ECHO: bool = False
     

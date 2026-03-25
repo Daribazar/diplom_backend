@@ -14,7 +14,6 @@ class User:
     is_active: bool = True
     created_at: Optional[datetime] = None
     
-    # Note: No hashed_password here - that's infrastructure concern
     
     def deactivate(self) -> None:
         """Business rule: Deactivate user."""

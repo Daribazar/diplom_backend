@@ -8,7 +8,7 @@ from src.config import settings
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DATABASE_ECHO,
-    poolclass=NullPool,  # For development
+    poolclass=NullPool,
     future=True
 )
 
