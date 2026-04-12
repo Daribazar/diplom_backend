@@ -15,7 +15,10 @@ class UserModel(Base, TimestampMixin):
     hashed_password = Column(String, nullable=False)
     full_name = Column(String(200), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
+    role = Column(String(20), nullable=False, default="student")  # student, teacher
     
     # Relationships
     courses = relationship("CourseModel", back_populates="owner", cascade="all, delete-orphan")
     attempts = relationship("StudentAttemptModel", back_populates="student", cascade="all, delete-orphan")
+    # Note: enrollments relationship removed to avoid circular import issues
+    # Access enrollments via query: session.query(CourseEnrollmentModel).filter_by(student_id=user.id)

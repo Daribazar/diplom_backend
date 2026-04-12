@@ -7,6 +7,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100)
     full_name: str = Field(..., min_length=1, max_length=200)
+    role: str = Field(default="student", pattern="^(student|teacher)$")
 
 
 class UserLogin(BaseModel):
@@ -27,6 +28,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     is_active: bool
+    role: str = "student"
     
     class Config:
         from_attributes = True

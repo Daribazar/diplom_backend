@@ -12,6 +12,7 @@ class User:
     email: str
     full_name: str
     is_active: bool = True
+    role: str = "student"
     created_at: Optional[datetime] = None
     
     

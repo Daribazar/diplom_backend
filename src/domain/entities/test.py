@@ -14,5 +14,6 @@ class Test:
     total_points: int
     time_limit: int  # minutes
     questions: List[Dict]
+    created_by: Optional[str] = None
     created_at: Optional[datetime] = None
 

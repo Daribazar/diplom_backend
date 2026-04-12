@@ -20,7 +20,8 @@ class UserRepository:
             email=user.email,
             full_name=user.full_name,
             hashed_password=hashed_password,
-            is_active=user.is_active
+            is_active=user.is_active,
+            role=user.role
         )
         self.session.add(db_user)
         await self.session.flush()
@@ -51,5 +52,6 @@ class UserRepository:
             email=db_model.email,
             full_name=db_model.full_name,
             is_active=db_model.is_active,
+            role=db_model.role,
             created_at=db_model.created_at
         )

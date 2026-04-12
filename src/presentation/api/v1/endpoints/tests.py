@@ -121,7 +121,7 @@ async def generate_test(
     "/{test_id}",
     response_model=TestResponse,
     summary="Get test by ID",
-    description="Retrieve a specific test"
+    description="Retrieve a specific test (owner or enrolled students)"
 )
 async def get_test(
     test_id: str,
@@ -129,6 +129,9 @@ async def get_test(
     db: AsyncSession = Depends(get_db)
 ):
     """Get test by ID."""
+    from sqlalchemy import select, and_
+    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+    
     test_repo = TestRepository(db)
     course_repo = CourseRepository(db)
     lecture_repo = LectureRepository(db)
@@ -142,15 +145,42 @@ async def get_test(
             detail="Тест олдсонгүй"
         )
     
-    # Verify ownership
+    # Check access: owner or enrolled student
     lecture = await lecture_repo.get_by_id(test.lecture_id)
-    if lecture:
-        course = await course_repo.get_by_id(lecture.course_id)
-        if not course or course.owner_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Хандах эрхгүй байна"
+    if not lecture:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Лекц олдсонгүй"
+        )
+    
+    course = await course_repo.get_by_id(lecture.course_id)
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Хичээл олдсонгүй"
+        )
+    
+    has_access = course.owner_id == current_user.id
+    
+    if not has_access and current_user.role == "student":
+        # Check enrollment
+        enrollment_result = await db.execute(
+            select(CourseEnrollmentModel).where(
+                and_(
+                    CourseEnrollmentModel.course_id == lecture.course_id,
+                    CourseEnrollmentModel.student_id == current_user.id,
+                    CourseEnrollmentModel.status == "approved"
+                )
             )
+        )
+        enrollment = enrollment_result.scalar_one_or_none()
+        has_access = enrollment is not None
+    
+    if not has_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Хандах эрхгүй байна"
+        )
     
     return TestResponse(
         id=test.id,
@@ -168,7 +198,7 @@ async def get_test(
     "/lecture/{lecture_id}",
     response_model=TestListResponse,
     summary="Get tests for lecture",
-    description="Get all tests for a specific lecture"
+    description="Get all tests for a specific lecture (owner or enrolled students)"
 )
 async def get_lecture_tests(
     lecture_id: str,
@@ -176,11 +206,14 @@ async def get_lecture_tests(
     db: AsyncSession = Depends(get_db)
 ):
     """Get all tests for a lecture."""
+    from sqlalchemy import select, and_
+    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+    
     test_repo = TestRepository(db)
     lecture_repo = LectureRepository(db)
     course_repo = CourseRepository(db)
     
-    # Verify ownership
+    # Get lecture
     lecture = await lecture_repo.get_by_id(lecture_id)
     
     if not lecture:
@@ -189,8 +222,31 @@ async def get_lecture_tests(
             detail="Лекц олдсонгүй"
         )
     
+    # Check access: owner or enrolled student
     course = await course_repo.get_by_id(lecture.course_id)
-    if not course or course.owner_id != current_user.id:
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Хичээл олдсонгүй"
+        )
+    
+    has_access = course.owner_id == current_user.id
+    
+    if not has_access and current_user.role == "student":
+        # Check enrollment
+        enrollment_result = await db.execute(
+            select(CourseEnrollmentModel).where(
+                and_(
+                    CourseEnrollmentModel.course_id == lecture.course_id,
+                    CourseEnrollmentModel.student_id == current_user.id,
+                    CourseEnrollmentModel.status == "approved"
+                )
+            )
+        )
+        enrollment = enrollment_result.scalar_one_or_none()
+        has_access = enrollment is not None
+    
+    if not has_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -198,6 +254,10 @@ async def get_lecture_tests(
     
     # Get tests
     tests = await test_repo.get_by_lecture(lecture_id)
+    
+    # Filter tests: show only user's own tests if student
+    if current_user.role == "student":
+        tests = [t for t in tests if t.created_by == current_user.id]
     
     return TestListResponse(
         total=len(tests),

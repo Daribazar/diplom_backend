@@ -17,7 +17,8 @@ class RegisterUserUseCase:
         self,
         email: str,
         password: str,
-        full_name: str
+        full_name: str,
+        role: str = "student"
     ) -> User:
         """
         Register new user.
@@ -26,11 +27,13 @@ class RegisterUserUseCase:
         - Email must be unique
         - Password must be hashed
         - User starts as active
+        - Role can be student or teacher
         
         Args:
             email: User email address
             password: Plain text password
             full_name: User's full name
+            role: User role (student or teacher)
             
         Returns:
             Created User entity
@@ -48,7 +51,8 @@ class RegisterUserUseCase:
             id=f"user_{uuid.uuid4().hex[:12]}",
             email=email,
             full_name=full_name,
-            is_active=True
+            is_active=True,
+            role=role
         )
         
         # Hash password (infrastructure concern)

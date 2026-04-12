@@ -69,17 +69,50 @@ async def create_course(
     "",
     response_model=CourseListResponse,
     summary="Get all courses",
-    description="Get all courses for the authenticated user"
+    description="Get all courses for the authenticated user (teacher: owned courses, student: enrolled courses)"
 )
 async def get_courses(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Get all courses for current user."""
-    course_repo = CourseRepository(db)
-    use_case = GetCoursesUseCase(course_repo)
+    from sqlalchemy import select
+    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+    from src.infrastructure.database.models.course import CourseModel
     
-    courses = await use_case.execute(owner_id=current_user.id)
+    course_repo = CourseRepository(db)
+    
+    if current_user.role == "teacher":
+        # Teachers see their own courses
+        use_case = GetCoursesUseCase(course_repo)
+        courses = await use_case.execute(owner_id=current_user.id)
+    else:
+        # Students see enrolled courses
+        enrollments_result = await db.execute(
+            select(CourseModel)
+            .join(CourseEnrollmentModel, CourseModel.id == CourseEnrollmentModel.course_id)
+            .where(
+                CourseEnrollmentModel.student_id == current_user.id,
+                CourseEnrollmentModel.status == "approved"
+            )
+        )
+        courses = enrollments_result.scalars().all()
+        
+        # Convert to domain entities
+        from src.domain.entities.course import Course
+        courses = [
+            Course(
+                id=c.id,
+                name=c.name,
+                code=c.code,
+                semester=c.semester,
+                instructor=c.instructor,
+                color=c.color,
+                owner_id=c.owner_id,
+                created_at=c.created_at
+            )
+            for c in courses
+        ]
     
     return CourseListResponse(
         total=len(courses),
@@ -103,7 +136,7 @@ async def get_courses(
     "/{course_id}",
     response_model=CourseResponse,
     summary="Get course by ID",
-    description="Get a single course by ID (only owner can access)"
+    description="Get a single course by ID (owner or enrolled students can access)"
 )
 async def get_course(
     course_id: str,
@@ -111,11 +144,39 @@ async def get_course(
     db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """Get single course by ID."""
+    from sqlalchemy import select, and_
+    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+    
     course_repo = CourseRepository(db)
     use_case = GetCourseUseCase(course_repo)
     
     try:
-        course = await use_case.execute(course_id, current_user.id)
+        # Try to get course (will check if user is owner)
+        try:
+            course = await use_case.execute(course_id, current_user.id)
+        except UnauthorizedError:
+            # If not owner, check if student is enrolled
+            if current_user.role == "student":
+                enrollment_result = await db.execute(
+                    select(CourseEnrollmentModel).where(
+                        and_(
+                            CourseEnrollmentModel.course_id == course_id,
+                            CourseEnrollmentModel.student_id == current_user.id,
+                            CourseEnrollmentModel.status == "approved"
+                        )
+                    )
+                )
+                enrollment = enrollment_result.scalar_one_or_none()
+                
+                if enrollment:
+                    # Student is enrolled, allow access
+                    course = await course_repo.get_by_id(course_id)
+                    if not course:
+                        raise NotFoundError("Course not found")
+                else:
+                    raise UnauthorizedError("You don't have access to this course")
+            else:
+                raise
         
         return CourseResponse(
             id=course.id,

@@ -43,14 +43,16 @@ async def register(
         user = await use_case.execute(
             email=user_data.email,
             password=user_data.password,
-            full_name=user_data.full_name
+            full_name=user_data.full_name,
+            role=user_data.role
         )
         
         return UserResponse(
             id=user.id,
             email=user.email,
             full_name=user.full_name,
-            is_active=user.is_active
+            is_active=user.is_active,
+            role=user.role
         )
     except DuplicateEmailError as e:
         raise HTTPException(
@@ -115,5 +117,6 @@ async def get_current_user_info(current_user: CurrentUser):
         id=current_user.id,
         email=current_user.email,
         full_name=current_user.full_name,
-        is_active=current_user.is_active
+        is_active=current_user.is_active,
+        role=current_user.role
     )

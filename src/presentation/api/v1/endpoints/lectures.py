@@ -101,7 +101,7 @@ async def upload_lecture(
     "/course/{course_id}",
     response_model=LectureListResponse,
     summary="Get course lectures",
-    description="Get all lectures for a course"
+    description="Get all lectures for a course (owner or enrolled students)"
 )
 async def get_course_lectures(
     course_id: str,
@@ -109,6 +109,9 @@ async def get_course_lectures(
     db: AsyncSession = Depends(get_db)
 ):
     """Get all lectures for a course."""
+    from sqlalchemy import select, and_
+    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+    
     lecture_repo = LectureRepository(db)
     course_repo = CourseRepository(db)
     
@@ -121,10 +124,27 @@ async def get_course_lectures(
             detail="Хичээл олдсонгүй"
         )
     
-    if course.owner_id != current_user.id:
+    # Check if user is owner or enrolled student
+    has_access = course.owner_id == current_user.id
+    
+    if not has_access and current_user.role == "student":
+        # Check enrollment
+        enrollment_result = await db.execute(
+            select(CourseEnrollmentModel).where(
+                and_(
+                    CourseEnrollmentModel.course_id == course_id,
+                    CourseEnrollmentModel.student_id == current_user.id,
+                    CourseEnrollmentModel.status == "approved"
+                )
+            )
+        )
+        enrollment = enrollment_result.scalar_one_or_none()
+        has_access = enrollment is not None
+    
+    if not has_access:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
+            detail="You don't have access to this course"
         )
     
     # Get lectures

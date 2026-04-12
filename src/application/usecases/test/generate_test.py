@@ -51,7 +51,7 @@ class GenerateTestUseCase:
         Generate test for a week.
         
         Business rules:
-        - User must own the course
+        - User must own the course OR be an enrolled student
         - Lecture must be processed
         
         Args:
@@ -67,17 +67,49 @@ class GenerateTestUseCase:
             
         Raises:
             NotFoundError: If course/lecture not found
-            UnauthorizedError: If user doesn't own course
+            UnauthorizedError: If user doesn't have access
             ValueError: If lecture not ready
         """
-        # Validate course ownership
+        from sqlalchemy import select, and_
+        from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+        from src.infrastructure.database.models.user import UserModel
+        
+        # Validate course exists
         course = await self.course_repo.get_by_id(course_id)
         
         if not course:
             raise NotFoundError(f"Хичээл олдсонгүй: {course_id}")
         
-        if course.owner_id != user_id:
-            raise UnauthorizedError("Та энэ хичээлийн эзэн биш байна")
+        # Check access: owner OR enrolled student
+        has_access = course.owner_id == user_id
+        
+        if not has_access:
+            # Check if user is enrolled student
+            # Get session from repository
+            session = self.course_repo.session
+            
+            # Get user to check role
+            user_result = await session.execute(
+                select(UserModel).where(UserModel.id == user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            
+            if user and user.role == "student":
+                # Check enrollment
+                enrollment_result = await session.execute(
+                    select(CourseEnrollmentModel).where(
+                        and_(
+                            CourseEnrollmentModel.course_id == course_id,
+                            CourseEnrollmentModel.student_id == user_id,
+                            CourseEnrollmentModel.status == "approved"
+                        )
+                    )
+                )
+                enrollment = enrollment_result.scalar_one_or_none()
+                has_access = enrollment is not None
+        
+        if not has_access:
+            raise UnauthorizedError("Та энэ хичээлд хандах эрхгүй байна")
         
         # Check lecture exists and is processed
         lecture = await self.lecture_repo.get_by_course_and_week(
@@ -118,6 +150,7 @@ class GenerateTestUseCase:
         test = Test(
             id=f"test_{uuid.uuid4().hex[:12]}",
             lecture_id=lecture.id,
+            created_by=user_id,
             title=f"Week {week_number} Test - {difficulty.capitalize()}",
             difficulty=difficulty,
             total_points=result.total_points,

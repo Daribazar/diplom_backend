@@ -31,6 +31,7 @@ class TestRepository:
         db_test = TestModel(
             id=test.id,
             lecture_id=test.lecture_id,
+            created_by=test.created_by,
             title=test.title,
             difficulty=test.difficulty,
             total_points=test.total_points,
@@ -74,6 +75,7 @@ class TestRepository:
         return Test(
             id=db_model.id,
             lecture_id=db_model.lecture_id,
+            created_by=db_model.created_by,
             title=db_model.title,
             difficulty=db_model.difficulty,
             total_points=db_model.total_points,

@@ -13,6 +13,7 @@ class TestModel(Base, TimestampMixin):
     
     id = Column(String, primary_key=True, default=lambda: f"test_{uuid.uuid4().hex[:12]}")
     lecture_id = Column(String, ForeignKey("lectures.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     title = Column(String(200), nullable=False)
     difficulty = Column(String(20), nullable=False)  # easy, medium, hard
     total_points = Column(Integer, default=0)
