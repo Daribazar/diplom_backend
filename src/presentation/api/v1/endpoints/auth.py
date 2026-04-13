@@ -1,4 +1,5 @@
 """Authentication endpoints."""
+
 from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,7 @@ from src.presentation.schemas.auth import (
     UserRegister,
     UserLogin,
     TokenResponse,
-    UserResponse
+    UserResponse,
 )
 from src.core.exceptions import DuplicateEmailError, InvalidCredentialsError
 from src.presentation.api.http_errors import map_common_domain_error
@@ -34,30 +35,29 @@ def _to_user_response(user) -> UserResponse:
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register new user",
-    description="Create a new user account with email and password"
+    description="Create a new user account with email and password",
 )
 async def register(
-    user_data: UserRegister,
-    db: Annotated[AsyncSession, Depends(get_db)]
+    user_data: UserRegister, db: Annotated[AsyncSession, Depends(get_db)]
 ):
     """
     Register new user.
-    
+
     - **email**: Valid email address (must be unique)
     - **password**: Minimum 8 characters
     - **full_name**: User's full name
     """
     user_repo = UserRepository(db)
     use_case = RegisterUserUseCase(user_repo)
-    
+
     try:
         user = await use_case.execute(
             email=user_data.email,
             password=user_data.password,
             full_name=user_data.full_name,
-            role=user_data.role
+            role=user_data.role,
         )
-        
+
         return _to_user_response(user)
     except DuplicateEmailError as e:
         raise map_common_domain_error(e)
@@ -67,34 +67,27 @@ async def register(
     "/login",
     response_model=TokenResponse,
     summary="Login user",
-    description="Authenticate user and receive JWT access token"
+    description="Authenticate user and receive JWT access token",
 )
-async def login(
-    credentials: UserLogin,
-    db: Annotated[AsyncSession, Depends(get_db)]
-):
+async def login(credentials: UserLogin, db: Annotated[AsyncSession, Depends(get_db)]):
     """
     Login user and return JWT token.
-    
+
     - **email**: User's email address
     - **password**: User's password
-    
+
     Returns JWT token to use in Authorization header:
     `Authorization: Bearer <token>`
     """
     user_repo = UserRepository(db)
     use_case = LoginUserUseCase(user_repo)
-    
+
     try:
         access_token = await use_case.execute(
-            email=credentials.email,
-            password=credentials.password
+            email=credentials.email, password=credentials.password
         )
-        
-        return TokenResponse(
-            access_token=access_token,
-            token_type="bearer"
-        )
+
+        return TokenResponse(access_token=access_token, token_type="bearer")
     except InvalidCredentialsError as e:
         raise map_common_domain_error(e)
 
@@ -103,12 +96,12 @@ async def login(
     "/me",
     response_model=UserResponse,
     summary="Get current user",
-    description="Get information about the currently authenticated user"
+    description="Get information about the currently authenticated user",
 )
 async def get_current_user_info(current_user: CurrentUser):
     """
     Get current authenticated user info.
-    
+
     Requires valid JWT token in Authorization header.
     """
     return _to_user_response(current_user)

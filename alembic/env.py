@@ -12,11 +12,12 @@ from src.config import settings
 
 # Import using getattr to handle numeric folder names
 import importlib
-infrastructure = importlib.import_module('src.infrastructure.database.models.base')
+
+infrastructure = importlib.import_module("src.infrastructure.database.models.base")
 Base = infrastructure.Base
 
 # Import all models for autogenerate
-models = importlib.import_module('src.infrastructure.database.models')
+models = importlib.import_module("src.infrastructure.database.models")
 UserModel = models.UserModel
 CourseModel = models.CourseModel
 LectureModel = models.LectureModel
@@ -66,12 +67,12 @@ def do_run_migrations(connection):
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     from sqlalchemy.ext.asyncio import create_async_engine
-    
+
     # Get database URL and ensure it uses asyncpg
     db_url = config.get_main_option("sqlalchemy.url")
     if not db_url.startswith("postgresql+asyncpg"):
         db_url = db_url.replace("postgresql://", "postgresql+asyncpg://")
-    
+
     connectable = create_async_engine(
         db_url,
         poolclass=pool.NullPool,

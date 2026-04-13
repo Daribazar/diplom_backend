@@ -1,115 +1,201 @@
 """initial_schema
 
 Revision ID: 2604c9471c0c
-Revises: 
+Revises:
 Create Date: 2026-03-06 12:19:19.748966
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from pgvector.sqlalchemy import Vector
 
-revision = '2604c9471c0c'
+revision = "2604c9471c0c"
 down_revision = None
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.execute('CREATE EXTENSION IF NOT EXISTS vector')
-    
-    op.create_table('users',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('email', sa.String(length=255), nullable=False),
-    sa.Column('hashed_password', sa.String(), nullable=False),
-    sa.Column('full_name', sa.String(length=200), nullable=False),
-    sa.Column('is_active', sa.Boolean(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+    op.create_table(
+        "users",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("email", sa.String(length=255), nullable=False),
+        sa.Column("hashed_password", sa.String(), nullable=False),
+        sa.Column("full_name", sa.String(length=200), nullable=False),
+        sa.Column("is_active", sa.Boolean(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_table('courses',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('name', sa.String(length=200), nullable=False),
-    sa.Column('code', sa.String(length=20), nullable=False),
-    sa.Column('semester', sa.String(length=50), nullable=False),
-    sa.Column('instructor', sa.String(length=200), nullable=True),
-    sa.Column('owner_id', sa.String(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['owner_id'], ['users.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('owner_id', 'code', 'semester', name='unique_course_per_semester')
+    op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
+    op.create_table(
+        "courses",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("name", sa.String(length=200), nullable=False),
+        sa.Column("code", sa.String(length=20), nullable=False),
+        sa.Column("semester", sa.String(length=50), nullable=False),
+        sa.Column("instructor", sa.String(length=200), nullable=True),
+        sa.Column("owner_id", sa.String(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "owner_id", "code", "semester", name="unique_course_per_semester"
+        ),
     )
-    op.create_table('lectures',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('course_id', sa.String(), nullable=False),
-    sa.Column('week_number', sa.Integer(), nullable=False),
-    sa.Column('title', sa.String(length=200), nullable=False),
-    sa.Column('file_url', sa.String(), nullable=True),
-    sa.Column('content', sa.Text(), nullable=True),
-    sa.Column('status', sa.String(length=20), nullable=False),
-    sa.Column('key_concepts', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('embedding_ids', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('lecture_metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.CheckConstraint('week_number >= 1 AND week_number <= 16', name='valid_week_number'),
-    sa.ForeignKeyConstraint(['course_id'], ['courses.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('course_id', 'week_number', name='unique_lecture_per_week')
+    op.create_table(
+        "lectures",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("course_id", sa.String(), nullable=False),
+        sa.Column("week_number", sa.Integer(), nullable=False),
+        sa.Column("title", sa.String(length=200), nullable=False),
+        sa.Column("file_url", sa.String(), nullable=True),
+        sa.Column("content", sa.Text(), nullable=True),
+        sa.Column("status", sa.String(length=20), nullable=False),
+        sa.Column(
+            "key_concepts", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "embedding_ids", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "lecture_metadata", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "week_number >= 1 AND week_number <= 16", name="valid_week_number"
+        ),
+        sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("course_id", "week_number", name="unique_lecture_per_week"),
     )
-    op.create_table('lecture_embeddings',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('lecture_id', sa.String(), nullable=False),
-    sa.Column('chunk_index', sa.Integer(), nullable=False),
-    sa.Column('chunk_text', sa.Text(), nullable=False),
-    sa.Column('embedding', Vector(dim=1536), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['lecture_id'], ['lectures.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_table(
+        "lecture_embeddings",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("lecture_id", sa.String(), nullable=False),
+        sa.Column("chunk_index", sa.Integer(), nullable=False),
+        sa.Column("chunk_text", sa.Text(), nullable=False),
+        sa.Column("embedding", Vector(dim=1536), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["lecture_id"], ["lectures.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f('ix_lecture_embeddings_lecture_id'), 'lecture_embeddings', ['lecture_id'], unique=False)
-    op.create_table('tests',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('lecture_id', sa.String(), nullable=False),
-    sa.Column('title', sa.String(length=200), nullable=False),
-    sa.Column('difficulty', sa.String(length=20), nullable=False),
-    sa.Column('total_points', sa.Integer(), nullable=True),
-    sa.Column('time_limit', sa.Integer(), nullable=True),
-    sa.Column('questions', postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['lecture_id'], ['lectures.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_index(
+        op.f("ix_lecture_embeddings_lecture_id"),
+        "lecture_embeddings",
+        ["lecture_id"],
+        unique=False,
     )
-    op.create_table('student_attempts',
-    sa.Column('id', sa.String(), nullable=False),
-    sa.Column('student_id', sa.String(), nullable=False),
-    sa.Column('test_id', sa.String(), nullable=False),
-    sa.Column('total_score', sa.Float(), nullable=True),
-    sa.Column('percentage', sa.Float(), nullable=True),
-    sa.Column('status', sa.String(length=20), nullable=True),
-    sa.Column('answers', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('weak_topics', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('analytics', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['student_id'], ['users.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['test_id'], ['tests.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    op.create_table(
+        "tests",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("lecture_id", sa.String(), nullable=False),
+        sa.Column("title", sa.String(length=200), nullable=False),
+        sa.Column("difficulty", sa.String(length=20), nullable=False),
+        sa.Column("total_points", sa.Integer(), nullable=True),
+        sa.Column("time_limit", sa.Integer(), nullable=True),
+        sa.Column("questions", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["lecture_id"], ["lectures.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_table(
+        "student_attempts",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("student_id", sa.String(), nullable=False),
+        sa.Column("test_id", sa.String(), nullable=False),
+        sa.Column("total_score", sa.Float(), nullable=True),
+        sa.Column("percentage", sa.Float(), nullable=True),
+        sa.Column("status", sa.String(length=20), nullable=True),
+        sa.Column("answers", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "weak_topics", postgresql.JSONB(astext_type=sa.Text()), nullable=True
+        ),
+        sa.Column("analytics", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.ForeignKeyConstraint(["student_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["test_id"], ["tests.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
     )
 
 
 def downgrade() -> None:
-    op.drop_table('student_attempts')
-    op.drop_table('tests')
-    op.drop_index(op.f('ix_lecture_embeddings_lecture_id'), table_name='lecture_embeddings')
-    op.drop_table('lecture_embeddings')
-    op.drop_table('lectures')
-    op.drop_table('courses')
-    op.drop_index(op.f('ix_users_email'), table_name='users')
-    op.drop_table('users')
+    op.drop_table("student_attempts")
+    op.drop_table("tests")
+    op.drop_index(
+        op.f("ix_lecture_embeddings_lecture_id"), table_name="lecture_embeddings"
+    )
+    op.drop_table("lecture_embeddings")
+    op.drop_table("lectures")
+    op.drop_table("courses")
+    op.drop_index(op.f("ix_users_email"), table_name="users")
+    op.drop_table("users")

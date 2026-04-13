@@ -1,21 +1,23 @@
 """Enrollment API endpoints."""
+
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_db, get_current_user
 from src.core.utils import generate_id
-from src.infrastructure.database.models.user import UserModel
 from src.infrastructure.database.models.course import CourseModel
 from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+from src.infrastructure.database.models.user import UserModel
 from src.presentation.schemas.enrollment import (
+    CourseWithEnrollmentStatus,
+    EnrollmentApprovalRequest,
+    EnrollmentDecisionResponse,
+    EnrollmentListResponse,
     EnrollmentRequest,
     EnrollmentResponse,
-    EnrollmentApprovalRequest,
-    EnrollmentListResponse,
-    CourseWithEnrollmentStatus,
-    EnrollmentDecisionResponse,
 )
 
 
@@ -27,7 +29,9 @@ DEFAULT_INSTRUCTOR_NAME = "N/A"
 DEFAULT_COURSE_COLOR = "blue"
 
 
-def _to_enrollment_response(enrollment: CourseEnrollmentModel, student: UserModel) -> EnrollmentResponse:
+def _to_enrollment_response(
+    enrollment: CourseEnrollmentModel, student: UserModel
+) -> EnrollmentResponse:
     return EnrollmentResponse(
         id=enrollment.id,
         course_id=enrollment.course_id,
@@ -41,14 +45,18 @@ def _to_enrollment_response(enrollment: CourseEnrollmentModel, student: UserMode
 
 
 async def _require_course(db: AsyncSession, course_id: str) -> CourseModel:
-    course_result = await db.execute(select(CourseModel).where(CourseModel.id == course_id))
+    course_result = await db.execute(
+        select(CourseModel).where(CourseModel.id == course_id)
+    )
     course = course_result.scalar_one_or_none()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
     return course
 
 
-async def _get_enrollment_by_id(db: AsyncSession, enrollment_id: str) -> CourseEnrollmentModel:
+async def _get_enrollment_by_id(
+    db: AsyncSession, enrollment_id: str
+) -> CourseEnrollmentModel:
     enrollment_result = await db.execute(
         select(CourseEnrollmentModel).where(CourseEnrollmentModel.id == enrollment_id)
     )
@@ -59,7 +67,9 @@ async def _get_enrollment_by_id(db: AsyncSession, enrollment_id: str) -> CourseE
 
 
 async def _get_user_enrollment_for_course(
-    db: AsyncSession, course_id: str, user_id: str
+    db: AsyncSession,
+    course_id: str,
+    user_id: str,
 ) -> CourseEnrollmentModel:
     enrollment_result = await db.execute(
         select(CourseEnrollmentModel).where(
@@ -76,25 +86,27 @@ async def _get_user_enrollment_for_course(
 async def request_enrollment(
     request: EnrollmentRequest,
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Student requests to enroll in a course.
     """
     await _require_course(db, request.course_id)
-    
+
     # Check if already enrolled or requested
-    existing = await _get_user_enrollment_for_course(db, request.course_id, current_user.id)
+    existing = await _get_user_enrollment_for_course(
+        db, request.course_id, current_user.id
+    )
     if existing:
         if existing.status == STATUS_APPROVED:
             raise HTTPException(
                 status_code=400,
-                detail="Already approved. Cannot request again."
+                detail="Already approved. Cannot request again.",
             )
         if existing.status == STATUS_PENDING:
             raise HTTPException(
                 status_code=400,
-                detail="Already pending. Cannot request again."
+                detail="Already pending. Cannot request again.",
             )
         # Allow students to request again after rejection.
         existing.status = STATUS_PENDING
@@ -103,19 +115,19 @@ async def request_enrollment(
         await db.commit()
         await db.refresh(existing)
         return _to_enrollment_response(existing, current_user)
-    
+
     # Create enrollment request
     enrollment = CourseEnrollmentModel(
         id=generate_id("enroll"),
         course_id=request.course_id,
         student_id=current_user.id,
-        status=STATUS_PENDING
+        status=STATUS_PENDING,
     )
-    
+
     db.add(enrollment)
     await db.commit()
     await db.refresh(enrollment)
-    
+
     return _to_enrollment_response(enrollment, current_user)
 
 
@@ -123,7 +135,7 @@ async def request_enrollment(
 async def cancel_enrollment_request(
     course_id: str,
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Student cancels their own pending enrollment request.
@@ -132,7 +144,9 @@ async def cancel_enrollment_request(
     if not enrollment:
         raise HTTPException(status_code=404, detail="Enrollment request not found")
     if enrollment.status != STATUS_PENDING:
-        raise HTTPException(status_code=400, detail="Only pending request can be cancelled")
+        raise HTTPException(
+            status_code=400, detail="Only pending request can be cancelled"
+        )
 
     await db.delete(enrollment)
     await db.commit()
@@ -143,17 +157,19 @@ async def cancel_enrollment_request(
 async def get_course_enrollments(
     course_id: str,
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get all enrollment requests for a course (teacher only).
     """
     # Check if user is the course owner (teacher)
     course = await _require_course(db, course_id)
-    
+
     if course.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only course teacher can view enrollments")
-    
+        raise HTTPException(
+            status_code=403, detail="Only course teacher can view enrollments"
+        )
+
     # Get all enrollments
     enrollments_result = await db.execute(
         select(CourseEnrollmentModel, UserModel)
@@ -162,15 +178,15 @@ async def get_course_enrollments(
         .order_by(CourseEnrollmentModel.requested_at.desc())
     )
     enrollments = enrollments_result.all()
-    
+
     enrollment_list = [
         _to_enrollment_response(enrollment, student)
         for enrollment, student in enrollments
     ]
-    
+
     return EnrollmentListResponse(
         total=len(enrollment_list),
-        enrollments=enrollment_list
+        enrollments=enrollment_list,
     )
 
 
@@ -178,25 +194,27 @@ async def get_course_enrollments(
 async def approve_enrollment(
     request: EnrollmentApprovalRequest,
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Teacher approves or rejects enrollment request.
     """
     enrollment = await _get_enrollment_by_id(db, request.enrollment_id)
-    
+
     # Check if user is the course owner
     course = await _require_course(db, enrollment.course_id)
     if not course or course.owner_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Only course teacher can approve enrollments")
-    
+        raise HTTPException(
+            status_code=403, detail="Only course teacher can approve enrollments"
+        )
+
     # Update status
     enrollment.status = STATUS_APPROVED if request.approve else STATUS_REJECTED
     if request.approve:
         enrollment.approved_at = datetime.utcnow()
-    
+
     await db.commit()
-    
+
     return EnrollmentDecisionResponse(
         message=f"Enrollment {'approved' if request.approve else 'rejected'} successfully",
         enrollment_id=enrollment.id,
@@ -207,7 +225,7 @@ async def approve_enrollment(
 @router.get("/my-enrollments", response_model=EnrollmentListResponse)
 async def get_my_enrollments(
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get current user's enrollment requests.
@@ -218,22 +236,21 @@ async def get_my_enrollments(
         .order_by(CourseEnrollmentModel.requested_at.desc())
     )
     enrollments = enrollments_result.scalars().all()
-    
+
     enrollment_list = [
-        _to_enrollment_response(enrollment, current_user)
-        for enrollment in enrollments
+        _to_enrollment_response(enrollment, current_user) for enrollment in enrollments
     ]
-    
+
     return EnrollmentListResponse(
         total=len(enrollment_list),
-        enrollments=enrollment_list
+        enrollments=enrollment_list,
     )
 
 
 @router.get("/browse-courses", response_model=list[CourseWithEnrollmentStatus])
 async def browse_all_courses(
     current_user: UserModel = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Browse all available courses with enrollment status (for students).
@@ -241,7 +258,7 @@ async def browse_all_courses(
     # Get all courses
     courses_result = await db.execute(select(CourseModel))
     courses = courses_result.scalars().all()
-    
+
     # Get user's enrollments
     enrollments_result = await db.execute(
         select(CourseEnrollmentModel).where(
@@ -250,19 +267,23 @@ async def browse_all_courses(
     )
     enrollments = enrollments_result.scalars().all()
     enrollment_map = {e.course_id: e for e in enrollments}
-    
+
     course_list = []
     for course in courses:
         enrollment = enrollment_map.get(course.id)
-        course_list.append(CourseWithEnrollmentStatus(
-            id=course.id,
-            name=course.name,
-            code=course.code,
-            semester=course.semester,
-            instructor=course.instructor or DEFAULT_INSTRUCTOR_NAME,
-            color=course.color or DEFAULT_COURSE_COLOR,
-            enrollment_status=enrollment.status if enrollment else None,
-            is_enrolled=enrollment.status == STATUS_APPROVED if enrollment else False
-        ))
-    
+        course_list.append(
+            CourseWithEnrollmentStatus(
+                id=course.id,
+                name=course.name,
+                code=course.code,
+                semester=course.semester,
+                instructor=course.instructor or DEFAULT_INSTRUCTOR_NAME,
+                color=course.color or DEFAULT_COURSE_COLOR,
+                enrollment_status=enrollment.status if enrollment else None,
+                is_enrolled=(
+                    enrollment.status == STATUS_APPROVED if enrollment else False
+                ),
+            )
+        )
+
     return course_list

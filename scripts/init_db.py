@@ -1,4 +1,5 @@
 """Initialize database with tables."""
+
 import asyncio
 import sys
 import os
@@ -14,23 +15,23 @@ from src.infrastructure.database.models import (
     CourseModel,
     LectureModel,
     TestModel,
-    StudentAttemptModel
+    StudentAttemptModel,
 )
 
 
 async def init_db():
     """Create all database tables."""
     print(f"Connecting to database: {settings.DATABASE_URL}")
-    
+
     engine = create_async_engine(settings.DATABASE_URL, echo=True)
-    
+
     async with engine.begin() as conn:
         print("Dropping all tables...")
         await conn.run_sync(Base.metadata.drop_all)
-        
+
         print("Creating all tables...")
         await conn.run_sync(Base.metadata.create_all)
-    
+
     await engine.dispose()
     print("✅ Database initialized successfully!")
 

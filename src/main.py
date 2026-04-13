@@ -41,12 +41,13 @@ def _debug_log(hypothesis_id: str, location: str, message: str, data: dict) -> N
         pass
     # endregion
 
+
 app = FastAPI(
     title=settings.APP_NAME,
     description="Agentic AI system for personalized learning",
     version="0.1.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
 )
 
 # CORS
@@ -77,8 +78,12 @@ async def debug_startup_probe() -> None:
         {
             "middlewares": middleware_names,
             "hasLoggingMiddleware": "LoggingMiddleware" in middleware_names,
-            "hasCustomValidationHandler": any("RequestValidationError" in key for key in exception_handler_keys),
-            "hasCustomAppExceptionHandler": any("AppException" in key for key in exception_handler_keys),
+            "hasCustomValidationHandler": any(
+                "RequestValidationError" in key for key in exception_handler_keys
+            ),
+            "hasCustomAppExceptionHandler": any(
+                "AppException" in key for key in exception_handler_keys
+            ),
             "exceptionHandlerCount": len(exception_handler_keys),
             "allowOrigins": settings.CORS_ALLOW_ORIGINS,
             "allowCredentials": True,
@@ -100,7 +105,7 @@ async def root():
             "status": "running",
             "app": settings.APP_NAME,
             "version": "0.1.0",
-            "environment": settings.APP_ENV
+            "environment": settings.APP_ENV,
         }
     )
 
@@ -110,22 +115,23 @@ async def health(db: AsyncSession = Depends(get_db)):
     """Detailed health check with database connectivity."""
     db_status = "disconnected"
     redis_status = "disconnected"
-    
+
     try:
         result = await db.execute(text("SELECT 1"))
         if result:
             db_status = "connected"
     except Exception as e:
         db_status = f"error: {str(e)}"
-    
+
     try:
         import redis
+
         r = redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=1)
         r.ping()
         redis_status = "connected"
     except Exception:
         redis_status = "disconnected"
-    
+
     _debug_log(
         "H4",
         "src/main.py:112",
@@ -136,15 +142,11 @@ async def health(db: AsyncSession = Depends(get_db)):
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
-        "redis": redis_status
+        "redis": redis_status,
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "src.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True
-    )
+
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)

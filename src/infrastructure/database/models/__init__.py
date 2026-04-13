@@ -1,4 +1,5 @@
 """SQLAlchemy models."""
+
 from .base import Base
 from .user import UserModel
 from .course import CourseModel
@@ -14,5 +15,5 @@ __all__ = [
     "LectureModel",
     "TestModel",
     "StudentAttemptModel",
-    "LectureEmbedding"
+    "LectureEmbedding",
 ]

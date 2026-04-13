@@ -1,4 +1,5 @@
 """Course schemas."""
+
 from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
@@ -6,12 +7,13 @@ from datetime import datetime
 
 class CourseCreate(BaseModel):
     """Course creation request."""
+
     name: str = Field(..., min_length=1, max_length=200)
     code: str = Field(..., min_length=1, max_length=20)
     semester: str = Field(..., min_length=1, max_length=50)
     instructor: Optional[str] = Field(None, max_length=200)
     color: Optional[str] = Field("indigo", max_length=20)
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -19,13 +21,14 @@ class CourseCreate(BaseModel):
                 "code": "CS401",
                 "semester": "Fall 2024",
                 "instructor": "Prof. Smith",
-                "color": "indigo"
+                "color": "indigo",
             }
         }
 
 
 class CourseUpdate(BaseModel):
     """Course update request."""
+
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     code: Optional[str] = Field(None, min_length=1, max_length=20)
     instructor: Optional[str] = Field(None, max_length=200)
@@ -33,6 +36,7 @@ class CourseUpdate(BaseModel):
 
 class CourseResponse(BaseModel):
     """Course response."""
+
     id: str
     name: str
     code: str
@@ -41,12 +45,13 @@ class CourseResponse(BaseModel):
     color: str
     owner_id: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
 
 class CourseListResponse(BaseModel):
     """Course list response."""
+
     total: int
     courses: list[CourseResponse]

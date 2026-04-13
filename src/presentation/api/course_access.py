@@ -1,4 +1,5 @@
 """Shared course access helpers for API endpoints."""
+
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -42,11 +43,17 @@ async def has_course_access(
     """Return True when user is owner or approved enrolled student."""
     course = await course_repo.get_by_id(course_id)
     if not course:
-        _debug_log("Course access denied - course missing", {"course_id": course_id, "user_id": user_id})
+        _debug_log(
+            "Course access denied - course missing",
+            {"course_id": course_id, "user_id": user_id},
+        )
         return False
 
     if course.owner_id == user_id:
-        _debug_log("Course access granted - owner", {"course_id": course_id, "user_id": user_id})
+        _debug_log(
+            "Course access granted - owner",
+            {"course_id": course_id, "user_id": user_id},
+        )
         return True
 
     if user_role != "student":

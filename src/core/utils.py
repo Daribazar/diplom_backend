@@ -1,4 +1,5 @@
 """Utility functions."""
+
 import uuid
 from datetime import datetime
 
@@ -6,10 +7,10 @@ from datetime import datetime
 def generate_id(prefix: str = "") -> str:
     """
     Generate a unique ID with optional prefix.
-    
+
     Args:
         prefix: Optional prefix for the ID (e.g., "user", "course")
-        
+
     Returns:
         String ID in format: prefix_uuid (e.g., "user_abc123...")
     """

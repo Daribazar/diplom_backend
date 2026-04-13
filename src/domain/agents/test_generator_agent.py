@@ -1,4 +1,5 @@
 """Test generator agent with RAG."""
+
 import json
 import logging
 from typing import List, Dict, Optional
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class QuestionType(str, Enum):
     """Question types."""
+
     MCQ = "mcq"
     TRUE_FALSE = "true_false"
     ESSAY = "essay"
@@ -20,6 +22,7 @@ class QuestionType(str, Enum):
 
 class Difficulty(str, Enum):
     """Difficulty levels (Bloom's Taxonomy)."""
+
     EASY = "easy"  # Remember, Understand
     MEDIUM = "medium"  # Apply, Analyze
     HARD = "hard"  # Evaluate, Create
@@ -28,6 +31,7 @@ class Difficulty(str, Enum):
 @dataclass
 class Question:
     """Test question."""
+
     question_id: str
     type: QuestionType
     question_text: str
@@ -42,6 +46,7 @@ class Question:
 @dataclass
 class TestGenerationResult:
     """Test generation result."""
+
     questions: List[Question]
     total_points: int
     metadata: Dict
@@ -50,128 +55,125 @@ class TestGenerationResult:
 class TestGeneratorAgent:
     """
     Test Generator Agent - generates tests using RAG.
-    
+
     Workflow:
     1. Retrieve context from lecture (RAG)
     2. Generate questions using LLM
     3. Validate quality
     4. Format output
     """
-    
-    def __init__(
-        self,
-        llm_adapter: ILLMAdapter,
-        context_retriever: ContextRetriever
-    ):
+
+    def __init__(self, llm_adapter: ILLMAdapter, context_retriever: ContextRetriever):
         """
         Initialize test generator agent.
-        
+
         Args:
             llm_adapter: LLM adapter for generation
             context_retriever: RAG context retriever
         """
         self.llm = llm_adapter
         self.retriever = context_retriever
-    
+
     async def generate_test(
         self,
         lecture_ids: List[str],
         difficulty: Difficulty,
         question_types: List[QuestionType],
-        question_count: int = 10
+        question_count: int = 10,
     ) -> TestGenerationResult:
         """
         Generate test for lectures.
-        
+
         Args:
             lecture_ids: Lecture IDs to generate from
             difficulty: Difficulty level
             question_types: Types of questions to generate
             question_count: Total questions
-            
+
         Returns:
             TestGenerationResult
         """
         # Step 1: RAG - Retrieve context
         query = "lecture content, key concepts, examples, definitions"
         context_chunks = await self.retriever.retrieve_for_test_generation(
-            lecture_ids=lecture_ids,
-            topic=query,
-            top_k=5
+            lecture_ids=lecture_ids, topic=query, top_k=5
         )
-        
+
         # Log context retrieval
-        logger.info("Retrieved context chunks length=%s", len(context_chunks) if context_chunks else 0)
-        
+        logger.info(
+            "Retrieved context chunks length=%s",
+            len(context_chunks) if context_chunks else 0,
+        )
+
         if not context_chunks or len(context_chunks.strip()) == 0:
             logger.warning("No context found for lectures=%s", lecture_ids)
             # Use fallback context for mock generation
             context_chunks = "This is a lecture about neural networks, machine learning, and deep learning concepts."
-        
+
         # Step 2: Generate questions
         questions = await self._generate_questions(
             context=context_chunks,
             difficulty=difficulty,
             question_types=question_types,
-            question_count=question_count
+            question_count=question_count,
         )
-        
+
         # Step 3: Validate quality
         validated_questions = self._validate_questions(questions)
-        
+
         # Step 4: Calculate points
         total_points = sum(q.points for q in validated_questions)
-        
+
         return TestGenerationResult(
             questions=validated_questions,
             total_points=total_points,
             metadata={
                 "difficulty": difficulty.value,
                 "question_count": len(validated_questions),
-                "context_chunks": len(context_chunks)
-            }
+                "context_chunks": len(context_chunks),
+            },
         )
-    
+
     async def _generate_questions(
         self,
         context: str,
         difficulty: Difficulty,
         question_types: List[QuestionType],
-        question_count: int
+        question_count: int,
     ) -> List[Question]:
         """Generate questions using LLM with RAG context."""
         # Build system prompt
         system_prompt = self._build_system_prompt(difficulty)
-        
+
         # Build user prompt with context
         user_prompt = self._build_user_prompt(
             context_text=context,
             difficulty=difficulty,
             question_types=question_types,
-            question_count=question_count
+            question_count=question_count,
         )
-        
+
         # LLM generation
         response = await self.llm.complete(
             prompt=user_prompt,
             system_prompt=system_prompt,
             temperature=0.7,
-            max_tokens=4000  # Increased for longer questions
+            max_tokens=4000,  # Increased for longer questions
         )
-        
+
         # Parse JSON response
         questions = self._parse_questions(response.content)
-        
+
         return questions
-    
+
     def _build_system_prompt(self, difficulty: Difficulty) -> str:
         """Build system prompt based on difficulty."""
         bloom_mapping = {
             Difficulty.EASY: "Remember and Understand (recall facts, explain concepts)",
             Difficulty.MEDIUM: "Apply and Analyze (use knowledge, break down problems)",
-            Difficulty.HARD: "Evaluate and Create (judge, design, synthesize)"
+            Difficulty.HARD: "Evaluate and Create (judge, design, synthesize)",
         }
-        
+
         return f"""You are an expert educational assessment designer specializing in creating high-quality test questions.
 
 CRITICAL REQUIREMENTS:
@@ -208,25 +210,27 @@ OUTPUT FORMAT (JSON only, no additional text):
 }}
 
 IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON object."""
-    
+
     def _build_user_prompt(
         self,
         context_text: str,
         difficulty: Difficulty,
         question_types: List[QuestionType],
-        question_count: int
+        question_count: int,
     ) -> str:
         """Build user prompt with context."""
         types_str = ", ".join([t.value for t in question_types])
-        
+
         # Map question types to Mongolian
         type_mapping = {
             "mcq": "Олон сонголттой (MCQ)",
             "true_false": "Үнэн/Худал",
-            "essay": "Эссэ"
+            "essay": "Эссэ",
         }
-        types_mongolian = ", ".join([type_mapping.get(t.value, t.value) for t in question_types])
-        
+        types_mongolian = ", ".join(
+            [type_mapping.get(t.value, t.value) for t in question_types]
+        )
+
         return f"""Дараах хичээлийн материал дээр үндэслэн {question_count} асуулт үүсгэнэ үү.
 
 ХИЧЭЭЛИЙН МАТЕРИАЛ:
@@ -241,7 +245,7 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
 - Асуултууд хичээлийн материалд үндэслэсэн байх ёстой
 
 Асуултуудыг JSON форматаар үүсгэнэ үү:"""
-    
+
     def _parse_questions(self, llm_response: str) -> List[Question]:
         """Parse LLM response to Question objects."""
         try:
@@ -254,19 +258,21 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
             if response_text.endswith("```"):
                 response_text = response_text[:-3]
             response_text = response_text.strip()
-            
+
             logger.debug("Parsing LLM response preview=%s", response_text[:200])
-            
+
             # Parse JSON
             data = json.loads(response_text)
             questions_data = data.get("questions", [])
-            
-            logger.info("Parsed questions from LLM response count=%s", len(questions_data))
-            
+
+            logger.info(
+                "Parsed questions from LLM response count=%s", len(questions_data)
+            )
+
             if not questions_data:
                 logger.error("No questions in LLM response data=%s", data)
                 raise ValueError("LLM response contains no questions")
-            
+
             # Convert to Question objects
             questions = []
             for i, q_data in enumerate(questions_data):
@@ -280,38 +286,47 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
                         points=q_data["points"],
                         difficulty=Difficulty(q_data["difficulty"]),
                         bloom_level=q_data.get("bloom_level", "remember"),
-                        explanation=q_data.get("explanation", "")
+                        explanation=q_data.get("explanation", ""),
                     )
                     questions.append(question)
                 except Exception as e:
-                    logger.error("Error parsing question index=%s error=%s data=%s", i, str(e), q_data)
+                    logger.error(
+                        "Error parsing question index=%s error=%s data=%s",
+                        i,
+                        str(e),
+                        q_data,
+                    )
                     continue
-            
-            logger.info("Successfully created question objects count=%s", len(questions))
+
+            logger.info(
+                "Successfully created question objects count=%s", len(questions)
+            )
             return questions
-            
+
         except json.JSONDecodeError as e:
-            logger.error("JSON decode error=%s response_preview=%s", str(e), llm_response[:500])
+            logger.error(
+                "JSON decode error=%s response_preview=%s", str(e), llm_response[:500]
+            )
             raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
-    
+
     def _validate_questions(self, questions: List[Question]) -> List[Question]:
         """Validate and filter questions."""
         validated = []
-        
+
         for q in questions:
             # Basic validation
             if not q.question_text or len(q.question_text) < 10:
                 continue  # Too short
-            
+
             if q.type == QuestionType.MCQ:
                 if not q.options or len(q.options) < 2:
                     continue  # Not enough options
                 if q.correct_answer not in q.options:
                     continue  # Invalid answer
-            
+
             if q.points < 1:
                 q.points = 1  # Minimum points
-            
+
             validated.append(q)
-        
+
         return validated

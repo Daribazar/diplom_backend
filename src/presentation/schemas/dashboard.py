@@ -1,9 +1,11 @@
 """Dashboard schemas."""
+
 from pydantic import BaseModel, Field
 
 
 class DashboardStatsResponse(BaseModel):
     """Dashboard statistics response."""
+
     total_courses: int = Field(..., description="Total number of courses")
     total_lectures: int = Field(..., description="Total number of lectures uploaded")
     total_tests: int = Field(..., description="Total number of tests taken")
@@ -12,6 +14,7 @@ class DashboardStatsResponse(BaseModel):
 
 class DashboardCourseData(BaseModel):
     """Course data for dashboard."""
+
     id: str = Field(..., description="Course ID")
     name: str = Field(..., description="Course name")
     code: str = Field(..., description="Course code")

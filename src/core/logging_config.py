@@ -1,4 +1,5 @@
 """Logging configuration."""
+
 import logging
 import sys
 from src.config import settings
@@ -7,9 +8,7 @@ from src.config import settings
 logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 
 
