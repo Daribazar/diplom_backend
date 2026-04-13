@@ -1,21 +1,46 @@
 """Lecture management endpoints."""
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, and_
+from pathlib import Path
 
 from src.core.dependencies import get_db, CurrentUser
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.external.storage.local_storage import LocalStorageService
+from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
 from src.application.usecases.lecture.upload_lecture import UploadLectureUseCase
-from src.presentation.schemas.lecture import (
-    LectureUploadResponse,
-    LectureResponse,
-    LectureListResponse
-)
+from src.presentation.schemas.lecture import LectureUploadResponse, LectureResponse, LectureListResponse
 from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
+from src.config import settings
 
 router = APIRouter()
+
+
+async def check_course_access(course_id: str, user_id: str, user_role: str, db: AsyncSession, course_repo) -> bool:
+    """Check if user has access to course (owner or enrolled student)."""
+    course = await course_repo.get_by_id(course_id)
+    if not course:
+        return False
+    
+    if course.owner_id == user_id:
+        return True
+    
+    if user_role == "student":
+        result = await db.execute(
+            select(CourseEnrollmentModel).where(
+                and_(
+                    CourseEnrollmentModel.course_id == course_id,
+                    CourseEnrollmentModel.student_id == user_id,
+                    CourseEnrollmentModel.status == "approved"
+                )
+            )
+        )
+        return result.scalar_one_or_none() is not None
+    
+    return False
 
 
 @router.post(
@@ -97,73 +122,23 @@ async def upload_lecture(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
-@router.get(
-    "/course/{course_id}",
-    response_model=LectureListResponse,
-    summary="Get course lectures",
-    description="Get all lectures for a course (owner or enrolled students)"
-)
-async def get_course_lectures(
-    course_id: str,
-    current_user: CurrentUser,
-    db: AsyncSession = Depends(get_db)
-):
+@router.get("/course/{course_id}", response_model=LectureListResponse)
+async def get_course_lectures(course_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Get all lectures for a course."""
-    from sqlalchemy import select, and_
-    from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
-    
     lecture_repo = LectureRepository(db)
     course_repo = CourseRepository(db)
     
-    # Check course access
-    course = await course_repo.get_by_id(course_id)
+    if not await check_course_access(course_id, current_user.id, current_user.role, db, course_repo):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
-    if not course:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Хичээл олдсонгүй"
-        )
-    
-    # Check if user is owner or enrolled student
-    has_access = course.owner_id == current_user.id
-    
-    if not has_access and current_user.role == "student":
-        # Check enrollment
-        enrollment_result = await db.execute(
-            select(CourseEnrollmentModel).where(
-                and_(
-                    CourseEnrollmentModel.course_id == course_id,
-                    CourseEnrollmentModel.student_id == current_user.id,
-                    CourseEnrollmentModel.status == "approved"
-                )
-            )
-        )
-        enrollment = enrollment_result.scalar_one_or_none()
-        has_access = enrollment is not None
-    
-    if not has_access:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this course"
-        )
-    
-    # Get lectures
     lectures = await lecture_repo.get_by_course(course_id)
     
     return LectureListResponse(
         total=len(lectures),
-        lectures=[
-            LectureResponse(
-                id=l.id,
-                course_id=l.course_id,
-                week_number=l.week_number,
-                title=l.title,
-                status=l.status,
-                key_concepts=l.key_concepts,
-                created_at=l.created_at
-            )
-            for l in lectures
-        ]
+        lectures=[LectureResponse(
+            id=l.id, course_id=l.course_id, week_number=l.week_number,
+            title=l.title, status=l.status, key_concepts=l.key_concepts, created_at=l.created_at
+        ) for l in lectures]
     )
 
 
@@ -264,3 +239,28 @@ async def get_lecture_status(
         "created_at": lecture.created_at.isoformat() if lecture.created_at else None,
         "processed_at": lecture.processed_at.isoformat() if lecture.processed_at else None
     }
+
+
+@router.get("/{lecture_id}/file")
+async def get_lecture_file(lecture_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Get lecture PDF file."""
+    lecture_repo = LectureRepository(db)
+    course_repo = CourseRepository(db)
+    
+    lecture = await lecture_repo.get_by_id(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Лекц олдсонгүй")
+    
+    if not await check_course_access(lecture.course_id, current_user.id, current_user.role, db, course_repo):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    
+    if not lecture.file_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture file not found")
+    
+    file_path = Path(settings.UPLOAD_DIR) / lecture.file_url
+    if not file_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture file not found")
+    
+    return FileResponse(path=str(file_path), media_type="application/pdf", filename=f"{lecture.title}.pdf")
+
+

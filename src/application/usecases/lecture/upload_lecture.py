@@ -3,6 +3,7 @@ import uuid
 from src.domain.entities.lecture import Lecture
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.infrastructure.processing.pdf_processor import PDFProcessor
 from src.domain.interfaces.storage_service import IStorageService
 from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
 
@@ -83,18 +84,8 @@ class UploadLectureUseCase:
         # Extract text from PDF
         content = ""
         try:
-            import io
-            from pypdf import PdfReader
-            
-            pdf_file = io.BytesIO(file_data)
-            pdf_reader = PdfReader(pdf_file)
-            
-            # Extract text from all pages
-            for page in pdf_reader.pages:
-                content += page.extract_text() + "\n"
-            
-            content = content.strip()
-        except Exception as e:
+            content = await PDFProcessor().extract_text(file_data)
+        except Exception:
             # If PDF extraction fails, continue without content
             # Processing will fail but lecture will be saved
             content = ""
