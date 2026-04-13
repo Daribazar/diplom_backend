@@ -52,19 +52,26 @@ class SubmitTestUseCase:
             student_answers=answers
         )
         
-        # Convert QuestionResult objects to dictionaries
-        question_results_dict = [
-            {
+        # Convert QuestionResult objects to dictionaries with question_text
+        question_results_dict = []
+        for qr in evaluation_result.question_results:
+            # Find the original question to get question_text
+            question = next(
+                (q for q in test.questions if q["question_id"] == qr.question_id),
+                None
+            )
+            question_text = question.get("question_text", "") if question else ""
+            
+            question_results_dict.append({
                 "question_id": qr.question_id,
+                "question_text": question_text,
                 "student_answer": qr.student_answer,
                 "correct_answer": qr.correct_answer,
                 "is_correct": qr.is_correct,
                 "points_earned": qr.points_earned,
                 "max_points": qr.max_points,
                 "feedback": qr.feedback
-            }
-            for qr in evaluation_result.question_results
-        ]
+            })
         
         # Create attempt entity
         attempt = StudentAttempt(

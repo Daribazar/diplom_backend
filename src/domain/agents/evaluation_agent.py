@@ -128,18 +128,40 @@ class EvaluationAgent:
         if not isinstance(correct_answer, str):
             correct_answer = str(correct_answer)
         
-        # Compare answers (case-insensitive)
-        is_correct = student_answer.strip().lower() == correct_answer.strip().lower()
+        # Normalize true/false answers for comparison
+        def normalize_answer(ans: str) -> str:
+            """Normalize answer to lowercase English for comparison."""
+            ans_lower = ans.strip().lower()
+            # Convert Mongolian to English
+            if ans_lower in ['үнэн', 'true']:
+                return 'true'
+            elif ans_lower in ['худал', 'false']:
+                return 'false'
+            return ans_lower
+        
+        # Normalize both answers
+        normalized_student = normalize_answer(student_answer)
+        normalized_correct = normalize_answer(correct_answer)
+        
+        # Compare normalized answers
+        is_correct = normalized_student == normalized_correct
         points_earned = question["points"] if is_correct else 0.0
+        
+        # Format correct answer for display (convert to Mongolian if needed)
+        display_correct = correct_answer
+        if normalized_correct == 'true':
+            display_correct = 'Үнэн'
+        elif normalized_correct == 'false':
+            display_correct = 'Худал'
         
         return QuestionResult(
             question_id=question["question_id"],
             student_answer=student_answer,
-            correct_answer=correct_answer,
+            correct_answer=display_correct,
             is_correct=is_correct,
             points_earned=points_earned,
             max_points=question["points"],
-            feedback="Зөв!" if is_correct else f"Буруу. Зөв хариулт: {correct_answer}"
+            feedback="Зөв!" if is_correct else f"Буруу. Зөв хариулт: {display_correct}"
         )
     
     async def _grade_essay(

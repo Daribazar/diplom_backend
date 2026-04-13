@@ -12,6 +12,7 @@ class SubmitTestRequest(BaseModel):
 class QuestionResultResponse(BaseModel):
     """Individual question result."""
     question_id: str
+    question_text: str
     student_answer: str
     correct_answer: str
     is_correct: bool

@@ -121,6 +121,7 @@ async def get_attempt_result(
 ):
     """Get test attempt result by ID."""
     attempt_repo = StudentAttemptRepository(db)
+    test_repo = TestRepository(db)
     
     # Get attempt
     attempt = await attempt_repo.get_by_id(attempt_id)
@@ -138,13 +139,29 @@ async def get_attempt_result(
             detail="Хандах эрхгүй байна"
         )
     
+    # Get test to fetch question texts
+    test = await test_repo.get_by_id(attempt.test_id)
+    
+    # Enrich answers with question_text if missing
+    enriched_answers = []
+    for ans in attempt.answers:
+        # If question_text is missing, fetch from test
+        if not ans.get("question_text") and test:
+            question = next(
+                (q for q in test.questions if q["question_id"] == ans["question_id"]),
+                None
+            )
+            ans["question_text"] = question.get("question_text", "") if question else ""
+        
+        enriched_answers.append(QuestionResultResponse(**ans))
+    
     return EvaluationResponse(
         attempt_id=attempt.id,
         test_id=attempt.test_id,
         total_score=attempt.total_score,
         percentage=attempt.percentage,
         status=attempt.status,
-        answers=[QuestionResultResponse(**ans) for ans in attempt.answers],
+        answers=enriched_answers,
         weak_topics=attempt.weak_topics,
         analytics=attempt.analytics,
         overall_feedback="(Cached feedback)",
