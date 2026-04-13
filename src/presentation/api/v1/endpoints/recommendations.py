@@ -1,16 +1,18 @@
 """Recommendation endpoints."""
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from collections import defaultdict
+from typing                     import Annotated
+from fastapi                    import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio     import AsyncSession
+from sqlalchemy                 import select
+from collections                import defaultdict
 
-from src.core.dependencies import get_db, CurrentUser
-from src.infrastructure.database.models.course import CourseModel
-from src.infrastructure.database.models.lecture import LectureModel
-from src.infrastructure.database.models.test import TestModel
-from src.infrastructure.database.models.student_attempt import StudentAttemptModel
-from src.presentation.schemas.recommendation import (
+from src.core.dependencies                                  import get_db, CurrentUser
+from src.infrastructure.database.models.course              import CourseModel
+from src.infrastructure.database.models.lecture             import LectureModel
+from src.infrastructure.database.models.test                import TestModel
+from src.infrastructure.database.models.student_attempt     import StudentAttemptModel
+from src.presentation.api.course_access                     import has_course_access
+from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.presentation.schemas.recommendation                import (
     CourseRecommendationResponse,
     FocusArea,
     StudyPlanDay,
@@ -31,7 +33,7 @@ def _empty_recommendation(course_id: str, based_on_week: int, ai_advice: str) ->
 
 
 def _build_focus_areas(attempts: list[StudentAttemptModel]) -> list[FocusArea]:
-    weak_topics = defaultdict(lambda: {"total": 0, "wrong": 0})
+    weak_topics = defaultdict(lambda: {"count": 0})
     for attempt in attempts:
         if not attempt.weak_topics:
             continue
@@ -42,18 +44,23 @@ def _build_focus_areas(attempts: list[StudentAttemptModel]) -> list[FocusArea]:
                 topic_name = topic
             else:
                 continue
-            weak_topics[topic_name]["total"] += 1
-            weak_topics[topic_name]["wrong"] += 1
+            weak_topics[topic_name]["count"] += 1
 
     focus_areas: list[FocusArea] = []
+    total_attempts = max(len(attempts), 1)
     for topic, stats in weak_topics.items():
-        if stats["total"] <= 0:
+        count = stats["count"]
+        if count <= 0:
             continue
-        percentage = max(0, 100 - (stats["wrong"] / stats["total"] * 100))
-        priority = "high" if percentage < 50 else "medium" if percentage < 75 else "low"
+
+        # weak_topics contains topics where student underperformed in each attempt.
+        # More appearances across attempts => lower mastery.
+        weakness_ratio = count / total_attempts
+        percentage = max(0, round(100 - weakness_ratio * 100))
+        priority = "high" if weakness_ratio >= 0.7 else "medium" if weakness_ratio >= 0.4 else "low"
         focus_areas.append(FocusArea(topic=topic, percentage=round(percentage), priority=priority))
 
-    focus_areas.sort(key=lambda x: x["percentage"])
+    focus_areas.sort(key=lambda x: (x.percentage, x.topic))
     return focus_areas[:5]
 
 
@@ -105,18 +112,20 @@ async def get_course_recommendations(
     - Study patterns and progress
     """
     
-    # Verify course exists and user has access
-    result = await db.execute(
-        select(CourseModel).where(
-            CourseModel.id == course_id,
-            CourseModel.owner_id == current_user.id
-        )
-    )
+    # Verify course exists and user has access (owner or approved enrolled student)
+    result = await db.execute(select(CourseModel).where(CourseModel.id == course_id))
     course = result.scalar_one_or_none()
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Course not found"
+        )
+    course_repo = CourseRepository(db)
+    can_access = await has_course_access(db, course_repo, course_id, current_user.id, current_user.role)
+    if not can_access:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have access to this course"
         )
     
     # Get all lectures for this course

@@ -86,10 +86,23 @@ async def request_enrollment(
     # Check if already enrolled or requested
     existing = await _get_user_enrollment_for_course(db, request.course_id, current_user.id)
     if existing:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Already {existing.status}. Cannot request again."
-        )
+        if existing.status == STATUS_APPROVED:
+            raise HTTPException(
+                status_code=400,
+                detail="Already approved. Cannot request again."
+            )
+        if existing.status == STATUS_PENDING:
+            raise HTTPException(
+                status_code=400,
+                detail="Already pending. Cannot request again."
+            )
+        # Allow students to request again after rejection.
+        existing.status = STATUS_PENDING
+        existing.approved_at = None
+        existing.requested_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(existing)
+        return _to_enrollment_response(existing, current_user)
     
     # Create enrollment request
     enrollment = CourseEnrollmentModel(
@@ -104,6 +117,26 @@ async def request_enrollment(
     await db.refresh(enrollment)
     
     return _to_enrollment_response(enrollment, current_user)
+
+
+@router.delete("/request/{course_id}")
+async def cancel_enrollment_request(
+    course_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Student cancels their own pending enrollment request.
+    """
+    enrollment = await _get_user_enrollment_for_course(db, course_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Enrollment request not found")
+    if enrollment.status != STATUS_PENDING:
+        raise HTTPException(status_code=400, detail="Only pending request can be cancelled")
+
+    await db.delete(enrollment)
+    await db.commit()
+    return {"message": "Enrollment request cancelled successfully"}
 
 
 @router.get("/course/{course_id}", response_model=EnrollmentListResponse)

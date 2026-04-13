@@ -20,6 +20,11 @@ from src.presentation.api.http_errors import map_common_domain_error
 
 router = APIRouter()
 OVERALL_FEEDBACK_CACHED = "(Cached feedback)"
+PERFECT_SCORE_THRESHOLD = 99.5
+PERFECT_SCORE_FEEDBACK = (
+    "Маш сайн! Та энэ тестийг 100% зөв хийлээ. "
+    "Энэ эрчээрээ үргэлжлүүлээрэй."
+)
 
 
 def _to_evaluation_response(attempt, overall_feedback: str) -> EvaluationResponse:
@@ -157,11 +162,24 @@ async def get_attempt_result(
 ):
     """Get test attempt result by ID."""
     attempt_repo, test_repo = _evaluation_repositories(db)
+    llm = LLMFactory.create_default_adapter()
+    evaluation_agent = EvaluationAgent(llm)
 
     try:
         attempt = await _require_owned_attempt(attempt_repo, attempt_id, current_user.id)
         test = await test_repo.get_by_id(attempt.test_id)
         enriched_answers = _enrich_attempt_answers(attempt.answers, test)
+        if (attempt.percentage or 0) >= PERFECT_SCORE_THRESHOLD:
+            overall_feedback = PERFECT_SCORE_FEEDBACK
+        else:
+            try:
+                overall_feedback = await evaluation_agent._generate_overall_feedback(
+                    percentage=attempt.percentage,
+                    weak_topics=attempt.weak_topics or [],
+                    analytics=attempt.analytics or {},
+                )
+            except Exception:
+                overall_feedback = OVERALL_FEEDBACK_CACHED
         return EvaluationResponse(
             attempt_id=attempt.id,
             test_id=attempt.test_id,
@@ -171,7 +189,7 @@ async def get_attempt_result(
             answers=enriched_answers,
             weak_topics=attempt.weak_topics,
             analytics=attempt.analytics,
-            overall_feedback=OVERALL_FEEDBACK_CACHED,
+            overall_feedback=overall_feedback,
             created_at=attempt.created_at,
         )
     except (NotFoundError, ValueError, PermissionError) as e:
