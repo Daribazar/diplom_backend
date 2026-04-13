@@ -1,5 +1,5 @@
 """Test evaluation endpoints."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_db, CurrentUser
@@ -11,11 +11,78 @@ from src.application.usecases.evaluation.submit_test import SubmitTestUseCase
 from src.presentation.schemas.evaluation import (
     SubmitTestRequest,
     EvaluationResponse,
-    QuestionResultResponse
+    QuestionResultResponse,
+    TestAttemptsResponse,
+    AttemptSummaryResponse,
 )
 from src.core.exceptions import NotFoundError
+from src.presentation.api.http_errors import map_common_domain_error
 
 router = APIRouter()
+OVERALL_FEEDBACK_CACHED = "(Cached feedback)"
+
+
+def _to_evaluation_response(attempt, overall_feedback: str) -> EvaluationResponse:
+    return EvaluationResponse(
+        attempt_id=attempt.id,
+        test_id=attempt.test_id,
+        total_score=attempt.total_score,
+        percentage=attempt.percentage,
+        status=attempt.status,
+        answers=[QuestionResultResponse(**ans) for ans in attempt.answers],
+        weak_topics=attempt.weak_topics,
+        analytics=attempt.analytics,
+        overall_feedback=overall_feedback,
+        created_at=attempt.created_at,
+    )
+
+
+def _evaluation_repositories(db: AsyncSession) -> tuple[StudentAttemptRepository, TestRepository]:
+    return StudentAttemptRepository(db), TestRepository(db)
+
+
+def _build_submit_use_case(db: AsyncSession) -> tuple[SubmitTestUseCase, EvaluationAgent]:
+    attempt_repo, test_repo = _evaluation_repositories(db)
+    llm = LLMFactory.create_default_adapter()
+    evaluation_agent = EvaluationAgent(llm)
+    use_case = SubmitTestUseCase(attempt_repo, test_repo, evaluation_agent)
+    return use_case, evaluation_agent
+
+
+def _to_attempt_summary(attempt) -> AttemptSummaryResponse:
+    return AttemptSummaryResponse(
+        attempt_id=attempt.id,
+        total_score=attempt.total_score,
+        percentage=attempt.percentage,
+        status=attempt.status,
+        created_at=attempt.created_at.isoformat() if attempt.created_at else None,
+    )
+
+
+async def _require_owned_attempt(
+    attempt_repo: StudentAttemptRepository, attempt_id: str, user_id: str
+):
+    attempt = await attempt_repo.get_by_id(attempt_id)
+    if not attempt:
+        raise NotFoundError("Оролдлого олдсонгүй")
+    if attempt.student_id != user_id:
+        raise PermissionError("Хандах эрхгүй байна")
+    return attempt
+
+
+def _enrich_attempt_answers(attempt_answers: list, test) -> list[QuestionResultResponse]:
+    """Fill missing question_text in attempt answers from test payload."""
+    enriched_answers: list[QuestionResultResponse] = []
+    for answer_item in attempt_answers:
+        answer = dict(answer_item)
+        if not answer.get("question_text") and test:
+            question = next(
+                (q for q in test.questions if q["question_id"] == answer["question_id"]),
+                None,
+            )
+            answer["question_text"] = question.get("question_text", "") if question else ""
+        enriched_answers.append(QuestionResultResponse(**answer))
+    return enriched_answers
 
 
 @router.post(
@@ -53,27 +120,15 @@ async def submit_test(
     - Weak topic identification
     - Personalized feedback in Mongolian
     """
-    # Initialize repositories
-    attempt_repo = StudentAttemptRepository(db)
-    test_repo = TestRepository(db)
-    
-    # Initialize LLM for evaluation
-    llm = LLMFactory.create_default_adapter()
-    evaluation_agent = EvaluationAgent(llm)
-    
-    # Initialize use case
-    use_case = SubmitTestUseCase(
-        attempt_repo,
-        test_repo,
-        evaluation_agent
-    )
+    use_case, evaluation_agent = _build_submit_use_case(db)
     
     try:
+        answers_data = [answer.model_dump() for answer in request.answers]
         # Execute evaluation
         attempt = await use_case.execute(
             test_id=test_id,
             user_id=current_user.id,  # Changed from student_id to user_id
-            answers=request.answers
+            answers=answers_data
         )
         
         # Get overall feedback from evaluation agent
@@ -83,29 +138,10 @@ async def submit_test(
             analytics=attempt.analytics
         )
         
-        return EvaluationResponse(
-            attempt_id=attempt.id,
-            test_id=attempt.test_id,
-            total_score=attempt.total_score,
-            percentage=attempt.percentage,
-            status=attempt.status,
-            answers=[QuestionResultResponse(**ans) for ans in attempt.answers],
-            weak_topics=attempt.weak_topics,
-            analytics=attempt.analytics,
-            overall_feedback=overall_feedback,
-            created_at=attempt.created_at
-        )
+        return _to_evaluation_response(attempt, overall_feedback)
         
-    except NotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Evaluation failed: {str(e)}"
-        )
+    except (NotFoundError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
 
 
 @router.get(
@@ -120,58 +156,31 @@ async def get_attempt_result(
     db: AsyncSession = Depends(get_db)
 ):
     """Get test attempt result by ID."""
-    attempt_repo = StudentAttemptRepository(db)
-    test_repo = TestRepository(db)
-    
-    # Get attempt
-    attempt = await attempt_repo.get_by_id(attempt_id)
-    
-    if not attempt:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Оролдлого олдсонгүй"
+    attempt_repo, test_repo = _evaluation_repositories(db)
+
+    try:
+        attempt = await _require_owned_attempt(attempt_repo, attempt_id, current_user.id)
+        test = await test_repo.get_by_id(attempt.test_id)
+        enriched_answers = _enrich_attempt_answers(attempt.answers, test)
+        return EvaluationResponse(
+            attempt_id=attempt.id,
+            test_id=attempt.test_id,
+            total_score=attempt.total_score,
+            percentage=attempt.percentage,
+            status=attempt.status,
+            answers=enriched_answers,
+            weak_topics=attempt.weak_topics,
+            analytics=attempt.analytics,
+            overall_feedback=OVERALL_FEEDBACK_CACHED,
+            created_at=attempt.created_at,
         )
-    
-    # Check ownership
-    if attempt.student_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Хандах эрхгүй байна"
-        )
-    
-    # Get test to fetch question texts
-    test = await test_repo.get_by_id(attempt.test_id)
-    
-    # Enrich answers with question_text if missing
-    enriched_answers = []
-    for ans in attempt.answers:
-        # If question_text is missing, fetch from test
-        if not ans.get("question_text") and test:
-            question = next(
-                (q for q in test.questions if q["question_id"] == ans["question_id"]),
-                None
-            )
-            ans["question_text"] = question.get("question_text", "") if question else ""
-        
-        enriched_answers.append(QuestionResultResponse(**ans))
-    
-    return EvaluationResponse(
-        attempt_id=attempt.id,
-        test_id=attempt.test_id,
-        total_score=attempt.total_score,
-        percentage=attempt.percentage,
-        status=attempt.status,
-        answers=enriched_answers,
-        weak_topics=attempt.weak_topics,
-        analytics=attempt.analytics,
-        overall_feedback="(Cached feedback)",
-        created_at=attempt.created_at
-    )
+    except (NotFoundError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
 
 
 @router.get(
     "/test/{test_id}/attempts",
-    response_model=dict,
+    response_model=TestAttemptsResponse,
     summary="Get all attempts for a test",
     description="Get all attempts by current user for a specific test"
 )
@@ -181,7 +190,7 @@ async def get_test_attempts(
     db: AsyncSession = Depends(get_db)
 ):
     """Get all attempts for a test by current user."""
-    attempt_repo = StudentAttemptRepository(db)
+    attempt_repo, _ = _evaluation_repositories(db)
     
     # Get attempts
     attempts = await attempt_repo.get_by_student_and_test(
@@ -189,17 +198,8 @@ async def get_test_attempts(
         test_id=test_id
     )
     
-    return {
-        "test_id": test_id,
-        "total_attempts": len(attempts),
-        "attempts": [
-            {
-                "attempt_id": a.id,
-                "total_score": a.total_score,
-                "percentage": a.percentage,
-                "status": a.status,
-                "created_at": a.created_at.isoformat() if a.created_at else None
-            }
-            for a in attempts
-        ]
-    }
+    return TestAttemptsResponse(
+        test_id=test_id,
+        total_attempts=len(attempts),
+        attempts=[_to_attempt_summary(attempt) for attempt in attempts],
+    )

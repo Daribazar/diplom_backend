@@ -1,10 +1,13 @@
 """Test repository."""
 from typing import Optional, List
+import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.domain.entities.test import Test
 from src.infrastructure.database.models.test import TestModel
+
+logger = logging.getLogger(__name__)
 
 
 class TestRepository:
@@ -24,9 +27,11 @@ class TestRepository:
         Returns:
             Created test
         """
-        print(f"[TestRepository] Creating test {test.id}")
-        print(f"[TestRepository] Questions count: {len(test.questions) if test.questions else 0}")
-        print(f"[TestRepository] Questions data: {test.questions[:2] if test.questions else 'None'}")  # First 2 questions
+        logger.info(
+            "Creating test id=%s questions_count=%s",
+            test.id,
+            len(test.questions) if test.questions else 0,
+        )
         
         db_test = TestModel(
             id=test.id,
@@ -43,7 +48,7 @@ class TestRepository:
         await self.session.flush()
         await self.session.refresh(db_test)
         
-        print(f"[TestRepository] Test saved. DB questions count: {len(db_test.questions) if db_test.questions else 0}")
+        logger.info("Saved test id=%s db_questions_count=%s", db_test.id, len(db_test.questions) if db_test.questions else 0)
         
         return self._to_entity(db_test)
     

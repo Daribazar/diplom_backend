@@ -1,6 +1,7 @@
 """Generate test use case."""
-import uuid
-from typing import List
+import logging
+from typing import List, Optional
+from sqlalchemy import select, and_
 
 from src.domain.entities.test import Test
 from src.domain.agents.test_generator_agent import (
@@ -11,7 +12,17 @@ from src.domain.agents.test_generator_agent import (
 from src.infrastructure.database.repositories.test_repository import TestRepository
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
+from src.infrastructure.database.models.user import UserModel
 from src.core.exceptions import NotFoundError, UnauthorizedError
+from src.core.utils import generate_id
+
+logger = logging.getLogger(__name__)
+DEFAULT_TIME_LIMIT_MINUTES = 30
+ROLE_STUDENT = "student"
+STATUS_APPROVED = "approved"
+STATUS_COMPLETED = "completed"
+DEFAULT_QUESTION_TYPES = ["mcq", "true_false"]
 
 
 class GenerateTestUseCase:
@@ -37,6 +48,47 @@ class GenerateTestUseCase:
         self.lecture_repo = lecture_repository
         self.course_repo = course_repository
         self.generator = test_generator
+
+    async def _has_course_access(self, course_id: str, user_id: str) -> bool:
+        course = await self.course_repo.get_by_id(course_id)
+        if not course:
+            raise NotFoundError(f"Хичээл олдсонгүй: {course_id}")
+        if course.owner_id == user_id:
+            return True
+
+        session = self.course_repo.session
+        user_result = await session.execute(select(UserModel).where(UserModel.id == user_id))
+        user = user_result.scalar_one_or_none()
+        if not user or user.role != ROLE_STUDENT:
+            return False
+
+        enrollment_result = await session.execute(
+            select(CourseEnrollmentModel).where(
+                and_(
+                    CourseEnrollmentModel.course_id == course_id,
+                    CourseEnrollmentModel.student_id == user_id,
+                    CourseEnrollmentModel.status == STATUS_APPROVED,
+                )
+            )
+        )
+        return enrollment_result.scalar_one_or_none() is not None
+
+    @staticmethod
+    def _serialize_questions(questions) -> List[dict]:
+        return [
+            {
+                "question_id": q.question_id,
+                "type": q.type.value,
+                "question_text": q.question_text,
+                "options": q.options,
+                "correct_answer": q.correct_answer,
+                "points": q.points,
+                "difficulty": q.difficulty.value,
+                "bloom_level": q.bloom_level,
+                "explanation": q.explanation,
+            }
+            for q in questions
+        ]
     
     async def execute(
         self,
@@ -44,7 +96,7 @@ class GenerateTestUseCase:
         week_number: int,
         user_id: str,
         difficulty: str = "medium",
-        question_types: List[str] = None,
+        question_types: Optional[List[str]] = None,
         question_count: int = 10
     ) -> Test:
         """
@@ -70,45 +122,7 @@ class GenerateTestUseCase:
             UnauthorizedError: If user doesn't have access
             ValueError: If lecture not ready
         """
-        from sqlalchemy import select, and_
-        from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
-        from src.infrastructure.database.models.user import UserModel
-        
-        # Validate course exists
-        course = await self.course_repo.get_by_id(course_id)
-        
-        if not course:
-            raise NotFoundError(f"Хичээл олдсонгүй: {course_id}")
-        
-        # Check access: owner OR enrolled student
-        has_access = course.owner_id == user_id
-        
-        if not has_access:
-            # Check if user is enrolled student
-            # Get session from repository
-            session = self.course_repo.session
-            
-            # Get user to check role
-            user_result = await session.execute(
-                select(UserModel).where(UserModel.id == user_id)
-            )
-            user = user_result.scalar_one_or_none()
-            
-            if user and user.role == "student":
-                # Check enrollment
-                enrollment_result = await session.execute(
-                    select(CourseEnrollmentModel).where(
-                        and_(
-                            CourseEnrollmentModel.course_id == course_id,
-                            CourseEnrollmentModel.student_id == user_id,
-                            CourseEnrollmentModel.status == "approved"
-                        )
-                    )
-                )
-                enrollment = enrollment_result.scalar_one_or_none()
-                has_access = enrollment is not None
-        
-        if not has_access:
+        if not await self._has_course_access(course_id, user_id):
             raise UnauthorizedError("Та энэ хичээлд хандах эрхгүй байна")
         
         # Check lecture exists and is processed
@@ -119,7 +133,7 @@ class GenerateTestUseCase:
         if not lecture:
             raise NotFoundError(f"{week_number}-р долоо хоногийн лекц олдсонгүй")
         
-        if lecture.status != "completed":
+        if lecture.status != STATUS_COMPLETED:
             raise ValueError(
                 f"Лекц боловсруулагдаагүй байна. Статус: {lecture.status}"
             )
@@ -128,13 +142,18 @@ class GenerateTestUseCase:
         difficulty_enum = Difficulty(difficulty)
         
         if question_types is None:
-            question_types = ["mcq", "true_false"]
+            question_types = DEFAULT_QUESTION_TYPES
         
         question_type_enums = [QuestionType(qt) for qt in question_types]
         
         # Generate test (AI Agent with RAG)
-        print(f"[GenerateTestUseCase] Generating test for lecture {lecture.id}")
-        print(f"[GenerateTestUseCase] Parameters: difficulty={difficulty}, types={question_types}, count={question_count}")
+        logger.info(
+            "Generating test lecture_id=%s difficulty=%s types=%s count=%s",
+            lecture.id,
+            difficulty,
+            question_types,
+            question_count,
+        )
         
         result = await self.generator.generate_test(
             lecture_ids=[lecture.id],
@@ -143,32 +162,18 @@ class GenerateTestUseCase:
             question_count=question_count
         )
         
-        print(f"[GenerateTestUseCase] Generated {len(result.questions)} questions")
-        print(f"[GenerateTestUseCase] Total points: {result.total_points}")
+        logger.info("Generated test questions=%s total_points=%s", len(result.questions), result.total_points)
         
         # Create Test entity
         test = Test(
-            id=f"test_{uuid.uuid4().hex[:12]}",
+            id=generate_id("test"),
             lecture_id=lecture.id,
             created_by=user_id,
             title=f"Week {week_number} Test - {difficulty.capitalize()}",
             difficulty=difficulty,
             total_points=result.total_points,
-            time_limit=30,  # 30 minutes default
-            questions=[
-                {
-                    "question_id": q.question_id,
-                    "type": q.type.value,
-                    "question_text": q.question_text,
-                    "options": q.options,
-                    "correct_answer": q.correct_answer,
-                    "points": q.points,
-                    "difficulty": q.difficulty.value,
-                    "bloom_level": q.bloom_level,
-                    "explanation": q.explanation
-                }
-                for q in result.questions
-            ]
+            time_limit=DEFAULT_TIME_LIMIT_MINUTES,
+            questions=self._serialize_questions(result.questions),
         )
         
         # Save to database

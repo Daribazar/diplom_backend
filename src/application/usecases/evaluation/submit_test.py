@@ -1,6 +1,4 @@
 """Submit test use case."""
-import uuid
-from datetime import datetime
 from typing import Dict, List, Any
 
 from src.domain.entities.student_attempt import StudentAttempt
@@ -8,6 +6,9 @@ from src.infrastructure.database.repositories.test_repository import TestReposit
 from src.infrastructure.database.repositories.student_attempt_repository import StudentAttemptRepository
 from src.domain.agents.evaluation_agent import EvaluationAgent
 from src.core.exceptions import NotFoundError
+from src.core.utils import generate_id
+
+STATUS_GRADED = "graded"
 
 
 class SubmitTestUseCase:
@@ -75,12 +76,12 @@ class SubmitTestUseCase:
         
         # Create attempt entity
         attempt = StudentAttempt(
-            id=f"attempt_{uuid.uuid4().hex[:12]}",
+            id=generate_id("attempt"),
             student_id=user_id,
             test_id=test_id,
             total_score=evaluation_result.total_score,
             percentage=evaluation_result.percentage,
-            status="graded",
+            status=STATUS_GRADED,
             answers=question_results_dict,
             weak_topics=evaluation_result.weak_topics,
             analytics=evaluation_result.analytics

@@ -1,11 +1,13 @@
 """Upload lecture use case."""
-import uuid
 from src.domain.entities.lecture import Lecture
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.processing.pdf_processor import PDFProcessor
 from src.domain.interfaces.storage_service import IStorageService
 from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
+from src.core.utils import generate_id
+
+STATUS_PENDING = "pending"
 
 
 class UploadLectureUseCase:
@@ -77,7 +79,7 @@ class UploadLectureUseCase:
         # Upload file to storage
         file_url = await self.storage.upload(
             file_data=file_data,
-            filename=f"lecture_w{week_number}_{uuid.uuid4().hex[:8]}.pdf",
+            filename=f"lecture_w{week_number}_{generate_id()[:8]}.pdf",
             folder=f"courses/{course_id}/lectures"
         )
         
@@ -92,13 +94,13 @@ class UploadLectureUseCase:
         
         # Create lecture entity
         lecture = Lecture(
-            id=f"lec_{uuid.uuid4().hex[:12]}",
+            id=generate_id("lec"),
             course_id=course_id,
             week_number=week_number,
             title=title,
             file_url=file_url,
             content=content,
-            status="pending"
+            status=STATUS_PENDING
         )
         
         # Save to database

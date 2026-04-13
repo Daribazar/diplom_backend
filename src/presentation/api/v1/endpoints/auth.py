@@ -1,6 +1,6 @@
 """Authentication endpoints."""
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.dependencies import get_db, CurrentUser
@@ -14,8 +14,19 @@ from src.presentation.schemas.auth import (
     UserResponse
 )
 from src.core.exceptions import DuplicateEmailError, InvalidCredentialsError
+from src.presentation.api.http_errors import map_common_domain_error
 
 router = APIRouter()
+
+
+def _to_user_response(user) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        is_active=user.is_active,
+        role=user.role,
+    )
 
 
 @router.post(
@@ -47,18 +58,9 @@ async def register(
             role=user_data.role
         )
         
-        return UserResponse(
-            id=user.id,
-            email=user.email,
-            full_name=user.full_name,
-            is_active=user.is_active,
-            role=user.role
-        )
+        return _to_user_response(user)
     except DuplicateEmailError as e:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(e)
-        )
+        raise map_common_domain_error(e)
 
 
 @router.post(
@@ -94,11 +96,7 @@ async def login(
             token_type="bearer"
         )
     except InvalidCredentialsError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"}
-        )
+        raise map_common_domain_error(e)
 
 
 @router.get(
@@ -113,10 +111,4 @@ async def get_current_user_info(current_user: CurrentUser):
     
     Requires valid JWT token in Authorization header.
     """
-    return UserResponse(
-        id=current_user.id,
-        email=current_user.email,
-        full_name=current_user.full_name,
-        is_active=current_user.is_active,
-        role=current_user.role
-    )
+    return _to_user_response(current_user)

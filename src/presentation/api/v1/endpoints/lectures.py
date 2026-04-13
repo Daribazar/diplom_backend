@@ -3,44 +3,68 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
 from pathlib import Path
 
 from src.core.dependencies import get_db, CurrentUser
 from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.external.storage.local_storage import LocalStorageService
-from src.infrastructure.database.models.enrollment import CourseEnrollmentModel
 from src.application.usecases.lecture.upload_lecture import UploadLectureUseCase
-from src.presentation.schemas.lecture import LectureUploadResponse, LectureResponse, LectureListResponse
+from src.presentation.schemas.lecture import (
+    LectureUploadResponse,
+    LectureResponse,
+    LectureListResponse,
+    LectureProcessResponse,
+    LectureStatusResponse,
+)
 from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
+from src.presentation.api.http_errors import map_common_domain_error
+from src.presentation.api.course_access import has_course_access
 from src.config import settings
 
 router = APIRouter()
+MAX_WEEKS = 16
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
+STATUS_COMPLETED = "completed"
 
 
-async def check_course_access(course_id: str, user_id: str, user_role: str, db: AsyncSession, course_repo) -> bool:
-    """Check if user has access to course (owner or enrolled student)."""
-    course = await course_repo.get_by_id(course_id)
-    if not course:
-        return False
-    
-    if course.owner_id == user_id:
-        return True
-    
-    if user_role == "student":
-        result = await db.execute(
-            select(CourseEnrollmentModel).where(
-                and_(
-                    CourseEnrollmentModel.course_id == course_id,
-                    CourseEnrollmentModel.student_id == user_id,
-                    CourseEnrollmentModel.status == "approved"
-                )
-            )
-        )
-        return result.scalar_one_or_none() is not None
-    
-    return False
+async def _require_lecture(lecture_repo: LectureRepository, lecture_id: str):
+    lecture = await lecture_repo.get_by_id(lecture_id)
+    if not lecture:
+        raise NotFoundError("Лекц олдсонгүй")
+    return lecture
+
+
+def _require_file_path(lecture, file_path: Path) -> None:
+    if not lecture.file_url or not file_path.exists():
+        raise NotFoundError("Lecture file not found")
+
+
+def _lecture_repositories(db: AsyncSession) -> tuple[LectureRepository, CourseRepository]:
+    return LectureRepository(db), CourseRepository(db)
+
+
+def _to_lecture_response(lecture) -> LectureResponse:
+    return LectureResponse(
+        id=lecture.id,
+        course_id=lecture.course_id,
+        week_number=lecture.week_number,
+        title=lecture.title,
+        status=lecture.status,
+        key_concepts=lecture.key_concepts,
+        created_at=lecture.created_at,
+    )
+
+
+def _to_lecture_status_response(lecture) -> dict:
+    return {
+        "lecture_id": lecture.id,
+        "title": lecture.title,
+        "status": lecture.status,
+        "key_concepts": lecture.key_concepts if lecture.status == STATUS_COMPLETED else [],
+        "created_at": lecture.created_at.isoformat() if lecture.created_at else None,
+        "processed_at": lecture.processed_at.isoformat() if lecture.processed_at else None,
+    }
 
 
 @router.post(
@@ -52,7 +76,7 @@ async def check_course_access(course_id: str, user_id: str, user_role: str, db: 
 )
 async def upload_lecture(
     course_id: Annotated[str, Form()],
-    week_number: Annotated[int, Form(ge=1, le=16)],
+    week_number: Annotated[int, Form(ge=1, le=MAX_WEEKS)],
     title: Annotated[str, Form(min_length=1, max_length=200)],
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
@@ -77,15 +101,14 @@ async def upload_lecture(
     file_data = await file.read()
     
     # Check file size (10MB max)
-    if len(file_data) > 10 * 1024 * 1024:
+    if len(file_data) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="File too large (max 10MB)"
         )
     
     # Execute use case
-    lecture_repo = LectureRepository(db)
-    course_repo = CourseRepository(db)
+    lecture_repo, course_repo = _lecture_repositories(db)
     storage = LocalStorageService()
     
     use_case = UploadLectureUseCase(
@@ -114,37 +137,29 @@ async def upload_lecture(
             estimated_time="2-3 minutes"
         )
         
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except UnauthorizedError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-    except DuplicateError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except (NotFoundError, UnauthorizedError, DuplicateError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
 
 
 @router.get("/course/{course_id}", response_model=LectureListResponse)
 async def get_course_lectures(course_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Get all lectures for a course."""
-    lecture_repo = LectureRepository(db)
-    course_repo = CourseRepository(db)
+    lecture_repo, course_repo = _lecture_repositories(db)
     
-    if not await check_course_access(course_id, current_user.id, current_user.role, db, course_repo):
+    if not await has_course_access(db, course_repo, course_id, current_user.id, current_user.role):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     
     lectures = await lecture_repo.get_by_course(course_id)
     
     return LectureListResponse(
         total=len(lectures),
-        lectures=[LectureResponse(
-            id=l.id, course_id=l.course_id, week_number=l.week_number,
-            title=l.title, status=l.status, key_concepts=l.key_concepts, created_at=l.created_at
-        ) for l in lectures]
+        lectures=[_to_lecture_response(lecture) for lecture in lectures]
     )
 
 
 @router.post(
     "/{lecture_id}/process",
-    response_model=dict,
+    response_model=LectureProcessResponse,
     summary="Process lecture",
     description="Process lecture with AI agents (extract concepts, create embeddings)"
 )
@@ -165,35 +180,21 @@ async def process_lecture(
     use_case = ProcessLectureUseCase(db)
     
     try:
-        result = await use_case.execute(
-            lecture_id=lecture_id,
-            user_id=current_user.id
-        )
-        
+        result = await use_case.execute(lecture_id=lecture_id, user_id=current_user.id)
         return {
             "message": "Lecture processed successfully",
             "lecture_id": result["lecture_id"],
             "key_concepts": result["key_concepts"],
             "chunks_created": result["chunks_created"],
-            "llm_usage": result["llm_usage"]
+            "llm_usage": result["llm_usage"],
         }
-        
-    except NotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Processing failed: {str(e)}"
-        )
+        raise map_common_domain_error(e)
 
 
 @router.get(
     "/{lecture_id}/status",
-    response_model=dict,
+    response_model=LectureStatusResponse,
     summary="Get lecture processing status",
     description="Check the processing status of a lecture"
 )
@@ -211,56 +212,36 @@ async def get_lecture_status(
     - completed: Processing finished successfully
     - failed: Processing failed
     """
-    lecture_repo = LectureRepository(db)
-    course_repo = CourseRepository(db)
+    lecture_repo, course_repo = _lecture_repositories(db)
     
-    # Get lecture
-    lecture = await lecture_repo.get_by_id(lecture_id)
-    
-    if not lecture:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Лекц олдсонгүй"
-        )
-    
-    # Check course access
-    course = await course_repo.get_by_id(lecture.course_id)
-    if not course or course.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
-    
-    return {
-        "lecture_id": lecture.id,
-        "title": lecture.title,
-        "status": lecture.status,
-        "key_concepts": lecture.key_concepts if lecture.status == "completed" else [],
-        "created_at": lecture.created_at.isoformat() if lecture.created_at else None,
-        "processed_at": lecture.processed_at.isoformat() if lecture.processed_at else None
-    }
+    try:
+        lecture = await _require_lecture(lecture_repo, lecture_id)
+
+        course = await course_repo.get_by_id(lecture.course_id)
+        if not course or course.owner_id != current_user.id:
+            raise UnauthorizedError("Access denied")
+
+        return _to_lecture_status_response(lecture)
+    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
 
 
 @router.get("/{lecture_id}/file")
 async def get_lecture_file(lecture_id: str, current_user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Get lecture PDF file."""
-    lecture_repo = LectureRepository(db)
-    course_repo = CourseRepository(db)
+    lecture_repo, course_repo = _lecture_repositories(db)
     
-    lecture = await lecture_repo.get_by_id(lecture_id)
-    if not lecture:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Лекц олдсонгүй")
-    
-    if not await check_course_access(lecture.course_id, current_user.id, current_user.role, db, course_repo):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    
-    if not lecture.file_url:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture file not found")
-    
-    file_path = Path(settings.UPLOAD_DIR) / lecture.file_url
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture file not found")
-    
-    return FileResponse(path=str(file_path), media_type="application/pdf", filename=f"{lecture.title}.pdf")
+    try:
+        lecture = await _require_lecture(lecture_repo, lecture_id)
+
+        if not await has_course_access(db, course_repo, lecture.course_id, current_user.id, current_user.role):
+            raise UnauthorizedError("Access denied")
+
+        file_path = Path(settings.UPLOAD_DIR) / lecture.file_url if lecture.file_url else Path()
+        _require_file_path(lecture, file_path)
+
+        return FileResponse(path=str(file_path), media_type="application/pdf", filename=f"{lecture.title}.pdf")
+    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
 
 

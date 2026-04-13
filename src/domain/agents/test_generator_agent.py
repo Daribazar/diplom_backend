@@ -1,11 +1,14 @@
 """Test generator agent with RAG."""
 import json
+import logging
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from enum import Enum
 
 from src.domain.interfaces.llm_adapter import ILLMAdapter
 from src.domain.memory.context_retriever import ContextRetriever
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionType(str, Enum):
@@ -98,10 +101,10 @@ class TestGeneratorAgent:
         )
         
         # Log context retrieval
-        print(f"[TestGenerator] Retrieved context length: {len(context_chunks) if context_chunks else 0}")
+        logger.info("Retrieved context chunks length=%s", len(context_chunks) if context_chunks else 0)
         
         if not context_chunks or len(context_chunks.strip()) == 0:
-            print(f"[TestGenerator] WARNING: No context found for lectures {lecture_ids}")
+            logger.warning("No context found for lectures=%s", lecture_ids)
             # Use fallback context for mock generation
             context_chunks = "This is a lecture about neural networks, machine learning, and deep learning concepts."
         
@@ -252,16 +255,16 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
                 response_text = response_text[:-3]
             response_text = response_text.strip()
             
-            print(f"[TestGenerator] Parsing LLM response (first 200 chars): {response_text[:200]}")
+            logger.debug("Parsing LLM response preview=%s", response_text[:200])
             
             # Parse JSON
             data = json.loads(response_text)
             questions_data = data.get("questions", [])
             
-            print(f"[TestGenerator] Parsed {len(questions_data)} questions from LLM response")
+            logger.info("Parsed questions from LLM response count=%s", len(questions_data))
             
             if not questions_data:
-                print(f"[TestGenerator] ERROR: No questions in response. Full data: {data}")
+                logger.error("No questions in LLM response data=%s", data)
                 raise ValueError("LLM response contains no questions")
             
             # Convert to Question objects
@@ -281,16 +284,14 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
                     )
                     questions.append(question)
                 except Exception as e:
-                    print(f"[TestGenerator] ERROR parsing question {i}: {str(e)}")
-                    print(f"[TestGenerator] Question data: {q_data}")
+                    logger.error("Error parsing question index=%s error=%s data=%s", i, str(e), q_data)
                     continue
             
-            print(f"[TestGenerator] Successfully created {len(questions)} Question objects")
+            logger.info("Successfully created question objects count=%s", len(questions))
             return questions
             
         except json.JSONDecodeError as e:
-            print(f"[TestGenerator] JSON decode error: {str(e)}")
-            print(f"[TestGenerator] Response text: {llm_response[:500]}")
+            logger.error("JSON decode error=%s response_preview=%s", str(e), llm_response[:500])
             raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
     
     def _validate_questions(self, questions: List[Question]) -> List[Question]:

@@ -10,13 +10,86 @@ from src.infrastructure.database.models.course import CourseModel
 from src.infrastructure.database.models.lecture import LectureModel
 from src.infrastructure.database.models.test import TestModel
 from src.infrastructure.database.models.student_attempt import StudentAttemptModel
-from src.core.exceptions import NotFoundError
+from src.presentation.schemas.recommendation import (
+    CourseRecommendationResponse,
+    FocusArea,
+    StudyPlanDay,
+    StudyTask,
+)
 
 router = APIRouter()
 
 
+def _empty_recommendation(course_id: str, based_on_week: int, ai_advice: str) -> CourseRecommendationResponse:
+    return CourseRecommendationResponse(
+        course_id=course_id,
+        based_on_week=based_on_week,
+        focus_areas=[],
+        study_plan=[],
+        ai_advice=ai_advice,
+    )
+
+
+def _build_focus_areas(attempts: list[StudentAttemptModel]) -> list[FocusArea]:
+    weak_topics = defaultdict(lambda: {"total": 0, "wrong": 0})
+    for attempt in attempts:
+        if not attempt.weak_topics:
+            continue
+        for topic in attempt.weak_topics:
+            if isinstance(topic, dict):
+                topic_name = topic.get("topic", "Unknown")
+            elif isinstance(topic, str):
+                topic_name = topic
+            else:
+                continue
+            weak_topics[topic_name]["total"] += 1
+            weak_topics[topic_name]["wrong"] += 1
+
+    focus_areas: list[FocusArea] = []
+    for topic, stats in weak_topics.items():
+        if stats["total"] <= 0:
+            continue
+        percentage = max(0, 100 - (stats["wrong"] / stats["total"] * 100))
+        priority = "high" if percentage < 50 else "medium" if percentage < 75 else "low"
+        focus_areas.append(FocusArea(topic=topic, percentage=round(percentage), priority=priority))
+
+    focus_areas.sort(key=lambda x: x["percentage"])
+    return focus_areas[:5]
+
+
+def _build_study_plan(focus_areas: list[FocusArea]) -> list[StudyPlanDay]:
+    if not focus_areas:
+        return []
+
+    day1_tasks = [StudyTask(duration=30, description=f"{area.topic} сэдвийн материал дахин унших") for area in focus_areas[:3]]
+    day2_tasks = [StudyTask(duration=25, description=f"{area.topic}-тай холбоотой дасгал бодох") for area in focus_areas[:3]]
+
+    return [
+        StudyPlanDay(day=1, title="Сул талуудыг дахин судлах", tasks=day1_tasks),
+        StudyPlanDay(day=2, title="Дасгал хийх", tasks=day2_tasks),
+        StudyPlanDay(
+            day=3,
+            title="Дасгал тест өгөх",
+            tasks=[
+                StudyTask(duration=45, description="Сул сэдвүүдээр дасгал тест өгөх"),
+                StudyTask(duration=15, description="Үр дүнгээ шинжлэх, алдаагаа засах"),
+            ],
+        ),
+    ]
+
+
+def _build_ai_advice(avg_score: float, focus_areas: list[FocusArea]) -> str:
+    primary_topic = focus_areas[0].topic if focus_areas else "Үндсэн сэдвүүд"
+    if avg_score >= 80:
+        return "Сайн ахиц гаргаж байна! Одоогийн түвшингээ хадгалахын тулд тогтмол давтлага хийж, илүү төвөгтэй асуултууд бодож үзээрэй."
+    if avg_score >= 60:
+        return f"Ахиц гарч байна. {primary_topic}-д илүү анхаарч, өдөр бүр 30-45 минут зарцуулбал үр дүн сайжирна."
+    return f"Суурь ойлголтоо бэхжүүлэх шаардлагатай байна. {primary_topic}-ээс эхлээд, өдөр бүр 1 цаг зарцуулж судлаарай."
+
+
 @router.get(
     "/course/{course_id}",
+    response_model=CourseRecommendationResponse,
     summary="Get personalized recommendations",
     description="Get AI-powered study recommendations based on test performance"
 )
@@ -55,13 +128,11 @@ async def get_course_recommendations(
     lectures = lectures_result.scalars().all()
     
     if not lectures:
-        return {
-            "course_id": course_id,
-            "based_on_week": 0,
-            "focus_areas": [],
-            "study_plan": [],
-            "ai_advice": "Хичээлийн материал оруулж, тест өгснөөр хувийн зөвлөмж авах боломжтой болно."
-        }
+        return _empty_recommendation(
+            course_id=course_id,
+            based_on_week=0,
+            ai_advice="Хичээлийн материал оруулж, тест өгснөөр хувийн зөвлөмж авах боломжтой болно.",
+        )
     
     # Get all tests and attempts for this course
     lecture_ids = [l.id for l in lectures]
@@ -71,13 +142,11 @@ async def get_course_recommendations(
     tests = tests_result.scalars().all()
     
     if not tests:
-        return {
-            "course_id": course_id,
-            "based_on_week": lectures[-1].week_number if lectures else 0,
-            "focus_areas": [],
-            "study_plan": [],
-            "ai_advice": "Тест үүсгэж, өгснөөр таны хувийн зөвлөмж бэлтгэгдэх болно."
-        }
+        return _empty_recommendation(
+            course_id=course_id,
+            based_on_week=lectures[-1].week_number if lectures else 0,
+            ai_advice="Тест үүсгэж, өгснөөр таны хувийн зөвлөмж бэлтгэгдэх болно.",
+        )
     
     test_ids = [t.id for t in tests]
     attempts_result = await db.execute(
@@ -91,109 +160,26 @@ async def get_course_recommendations(
     attempts = attempts_result.scalars().all()
     
     if not attempts:
-        return {
-            "course_id": course_id,
-            "based_on_week": lectures[-1].week_number if lectures else 0,
-            "focus_areas": [],
-            "study_plan": [],
-            "ai_advice": "Тест өгснөөр таны хувийн зөвлөмж автоматаар үүснэ."
-        }
-    
-    # Analyze weak topics from attempts
-    weak_topics = defaultdict(lambda: {"total": 0, "wrong": 0, "percentage": 0})
-    
-    for attempt in attempts:
-        if attempt.weak_topics:
-            for topic in attempt.weak_topics:
-                if isinstance(topic, dict):
-                    topic_name = topic.get("topic", "Unknown")
-                    weak_topics[topic_name]["total"] += 1
-                    weak_topics[topic_name]["wrong"] += 1
-                elif isinstance(topic, str):
-                    weak_topics[topic]["total"] += 1
-                    weak_topics[topic]["wrong"] += 1
-    
-    # Calculate percentages and sort by weakness
-    focus_areas = []
-    for topic, stats in weak_topics.items():
-        if stats["total"] > 0:
-            # Lower percentage = weaker topic
-            percentage = max(0, 100 - (stats["wrong"] / stats["total"] * 100))
-            priority = "high" if percentage < 50 else "medium" if percentage < 75 else "low"
-            focus_areas.append({
-                "topic": topic,
-                "percentage": round(percentage),
-                "priority": priority
-            })
-    
-    # Sort by percentage (weakest first)
-    focus_areas.sort(key=lambda x: x["percentage"])
-    focus_areas = focus_areas[:5]  # Top 5 weak areas
-    
-    # Generate study plan
-    study_plan = []
-    
-    if focus_areas:
-        # Day 1: Review weak topics
-        day1_tasks = []
-        for i, area in enumerate(focus_areas[:3]):
-            day1_tasks.append({
-                "duration": 30,
-                "description": f"{area['topic']} сэдвийн материал дахин унших"
-            })
-        study_plan.append({
-            "day": 1,
-            "title": "Сул талуудыг дахин судлах",
-            "tasks": day1_tasks
-        })
-        
-        # Day 2: Practice exercises
-        day2_tasks = []
-        for area in focus_areas[:3]:
-            day2_tasks.append({
-                "duration": 25,
-                "description": f"{area['topic']}-тай холбоотой дасгал бодох"
-            })
-        study_plan.append({
-            "day": 2,
-            "title": "Дасгал хийх",
-            "tasks": day2_tasks
-        })
-        
-        # Day 3: Take practice test
-        study_plan.append({
-            "day": 3,
-            "title": "Дасгал тест өгөх",
-            "tasks": [
-                {
-                    "duration": 45,
-                    "description": "Сул сэдвүүдээр дасгал тест өгөх"
-                },
-                {
-                    "duration": 15,
-                    "description": "Үр дүнгээ шинжлэх, алдаагаа засах"
-                }
-            ]
-        })
-    
-    # Generate AI advice
+        return _empty_recommendation(
+            course_id=course_id,
+            based_on_week=lectures[-1].week_number if lectures else 0,
+            ai_advice="Тест өгснөөр таны хувийн зөвлөмж автоматаар үүснэ.",
+        )
+
+    focus_areas = _build_focus_areas(attempts)
+    study_plan = _build_study_plan(focus_areas)
+
     latest_attempt = attempts[0]
     avg_score = latest_attempt.percentage or 0
-    
-    if avg_score >= 80:
-        ai_advice = f"Сайн ахиц гаргаж байна! Одоогийн түвшингээ хадгалахын тулд тогтмол давтлага хийж, илүү төвөгтэй асуултууд бодож үзээрэй."
-    elif avg_score >= 60:
-        ai_advice = f"Ахиц гарч байна. {focus_areas[0]['topic'] if focus_areas else 'Сул сэдвүүд'}-д илүү анхаарч, өдөр бүр 30-45 минут зарцуулбал үр дүн сайжирна."
-    else:
-        ai_advice = f"Суурь ойлголтоо бэхжүүлэх шаардлагатай байна. {focus_areas[0]['topic'] if focus_areas else 'Үндсэн сэдвүүд'}-ээс эхлээд, өдөр бүр 1 цаг зарцуулж судлаарай."
+    ai_advice = _build_ai_advice(avg_score, focus_areas)
     
     # Get the most recent week number
     latest_week = lectures[-1].week_number if lectures else 0
     
-    return {
-        "course_id": course_id,
-        "based_on_week": latest_week,
-        "focus_areas": focus_areas,
-        "study_plan": study_plan,
-        "ai_advice": ai_advice
-    }
+    return CourseRecommendationResponse(
+        course_id=course_id,
+        based_on_week=latest_week,
+        focus_areas=focus_areas,
+        study_plan=study_plan,
+        ai_advice=ai_advice,
+    )

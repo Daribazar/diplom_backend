@@ -1,12 +1,18 @@
 """Evaluation schemas."""
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
+
+
+class SubmitAnswerItem(BaseModel):
+    """Single answer item in a test submission."""
+    question_id: str
+    answer: str
 
 
 class SubmitTestRequest(BaseModel):
     """Test submission request."""
-    answers: List[Dict]  # [{"question_id": "q1", "answer": "Option A"}]
+    answers: List[SubmitAnswerItem]
 
 
 class QuestionResultResponse(BaseModel):
@@ -33,3 +39,19 @@ class EvaluationResponse(BaseModel):
     analytics: Dict
     overall_feedback: str
     created_at: datetime
+
+
+class AttemptSummaryResponse(BaseModel):
+    """Compact attempt info for listing."""
+    attempt_id: str
+    total_score: float
+    percentage: float
+    status: str
+    created_at: Optional[str]
+
+
+class TestAttemptsResponse(BaseModel):
+    """All attempts by current user for a test."""
+    test_id: str
+    total_attempts: int
+    attempts: List[AttemptSummaryResponse]

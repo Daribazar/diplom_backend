@@ -1,31 +1,13 @@
-"""API route dependencies."""
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional
+"""API route dependencies.
 
-from src.core.security import decode_access_token
+Re-exports shared auth dependencies from src.core.dependencies to avoid
+duplicating JWT parsing logic in multiple places.
+"""
+from fastapi import Depends
 
-security = HTTPBearer()
+from src.core.dependencies import CurrentUser, get_current_user, get_db
 
 
-async def get_current_user_id(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> int:
-    """Get current authenticated user ID from JWT token."""
-    token = credentials.credentials
-    payload = decode_access_token(token)
-    
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials"
-        )
-    
-    user_id: Optional[int] = payload.get("sub")
-    if user_id is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload"
-        )
-    
-    return int(user_id)
+async def get_current_user_id(current_user: CurrentUser = Depends(get_current_user)) -> str:
+    """Compatibility helper: returns current authenticated user ID."""
+    return current_user.id

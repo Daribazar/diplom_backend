@@ -1,7 +1,7 @@
 """Create course use case."""
-import uuid
 from src.domain.entities.course import Course
 from src.infrastructure.database.repositories.course_repository import CourseRepository
+from src.core.utils import generate_id
 
 
 class CreateCourseUseCase:
@@ -40,7 +40,7 @@ class CreateCourseUseCase:
         """
         # Create domain entity
         course = Course(
-            id=f"course_{uuid.uuid4().hex[:12]}",
+            id=generate_id("course"),
             name=name,
             code=code,
             semester=semester,

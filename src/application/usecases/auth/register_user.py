@@ -1,9 +1,11 @@
 """User registration use case."""
-import uuid
 from src.domain.entities.user import User
 from src.infrastructure.database.repositories.user_repository import UserRepository
 from src.core.security import get_password_hash
 from src.core.exceptions import DuplicateEmailError
+from src.core.utils import generate_id
+
+ROLE_STUDENT = "student"
 
 
 class RegisterUserUseCase:
@@ -18,7 +20,7 @@ class RegisterUserUseCase:
         email: str,
         password: str,
         full_name: str,
-        role: str = "student"
+        role: str = ROLE_STUDENT
     ) -> User:
         """
         Register new user.
@@ -48,7 +50,7 @@ class RegisterUserUseCase:
         
         # Create domain entity
         user = User(
-            id=f"user_{uuid.uuid4().hex[:12]}",
+            id=generate_id("user"),
             email=email,
             full_name=full_name,
             is_active=True,

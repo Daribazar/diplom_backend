@@ -7,6 +7,9 @@ from src.infrastructure.database.repositories.lecture_repository import LectureR
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.core.exceptions import NotFoundError
 
+STATUS_PROCESSING = "processing"
+STATUS_FAILED = "failed"
+
 
 class ProcessLectureUseCase:
     """Use case for processing lecture content (chunking, embedding)."""
@@ -49,7 +52,7 @@ class ProcessLectureUseCase:
         
         # Validate ownership
         db_course = await self.course_repo.get_by_id(db_lecture.course_id)
-        if not db_course or db_course.user_id != user_id:
+        if not db_course or db_course.owner_id != user_id:
             raise PermissionError("Not authorized to process this lecture")
         
         # Validate lecture has content
@@ -57,7 +60,7 @@ class ProcessLectureUseCase:
             raise ValueError("Lecture has no content to process")
         
         # Mark as processing
-        db_lecture.status = "processing"
+        db_lecture.status = STATUS_PROCESSING
         await self.db.commit()
         
         try:
@@ -72,7 +75,7 @@ class ProcessLectureUseCase:
             
         except Exception as e:
             # Mark as failed
-            db_lecture.status = "failed"
+            db_lecture.status = STATUS_FAILED
             await self.db.commit()
-            raise RuntimeError(f"Lecture processing failed: {str(e)}")
+            raise RuntimeError(f"Lecture processing failed: {str(e)}") from e
 

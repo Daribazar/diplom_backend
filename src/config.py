@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import List
 
 
 class Settings(BaseSettings):
@@ -8,6 +9,11 @@ class Settings(BaseSettings):
     APP_NAME: str = "Agentic ai student support system"
     APP_ENV: str = "development"
     DEBUG: bool = True
+    CORS_ALLOW_ORIGINS: List[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://172.18.0.6:3000",
+    ]
     SECRET_KEY: str
     
     DATABASE_URL: str
