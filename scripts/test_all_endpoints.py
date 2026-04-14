@@ -353,18 +353,18 @@ class EndpointTester:
                 else:
                     console.print(f"❌ Get lectures: Failed")
                     self.add_result(
-                        "Lectures", f"/lectures/course/{'{id}'}", "GET", "❌ FAIL"
+                        "Lectures", f"/lectures/course/{'{id}'}", "GET", " FAIL"
                     )
             except Exception as e:
-                console.print(f"❌ Get lectures: Error - {e}")
+                console.print(f" Get lectures: Error - {e}")
                 self.add_result(
-                    "Lectures", f"/lectures/course/{'{id}'}", "GET", "❌ ERROR", str(e)
+                    "Lectures", f"/lectures/course/{'{id}'}", "GET", " ERROR", str(e)
                 )
 
             # Note: File upload test requires actual PDF file
             console.print("⚠️  Lecture upload requires PDF file (skipping)")
             self.add_result(
-                "Lectures", "/lectures/upload", "POST", "⚠️  SKIP", "Requires PDF file"
+                "Lectures", "/lectures/upload", "POST", "  SKIP", "Requires PDF file"
             )
 
         return True
@@ -376,25 +376,25 @@ class EndpointTester:
         print("=" * 60)
 
         if not self.token or not self.course_id:
-            console.print("❌ No token or course_id, skipping test generation")
+            console.print(" No token or course_id, skipping test generation")
             return False
 
         headers = {"Authorization": f"Bearer {self.token}"}
 
         async with httpx.AsyncClient() as client:
             # Note: Test generation requires processed lecture
-            console.print("⚠️  Test generation requires processed lecture (skipping)")
+            console.print("  Test generation requires processed lecture (skipping)")
             self.add_result(
-                "Tests", "/tests/generate", "POST", "⚠️  SKIP", "Requires lecture"
+                "Tests", "/tests/generate", "POST", " SKIP", "Requires lecture"
             )
             self.add_result(
-                "Tests", f"/tests/{'{id}'}", "GET", "⚠️  SKIP", "Requires test"
+                "Tests", f"/tests/{'{id}'}", "GET", "  SKIP", "Requires test"
             )
             self.add_result(
                 "Tests",
                 f"/tests/lecture/{'{id}'}",
                 "GET",
-                "⚠️  SKIP",
+                "  SKIP",
                 "Requires lecture",
             )
 
@@ -407,30 +407,30 @@ class EndpointTester:
         print("=" * 60)
 
         if not self.token:
-            console.print("❌ No token, skipping evaluation tests")
+            console.print(" No token, skipping evaluation tests")
             return False
 
         # Note: Evaluation requires test submission
-        console.print("⚠️  Evaluation requires test submission (skipping)")
+        console.print("  Evaluation requires test submission (skipping)")
         self.add_result(
             "Evaluations",
             f"/evaluations/submit/{'{id}'}",
             "POST",
-            "⚠️  SKIP",
+            "SKIP",
             "Requires test",
         )
         self.add_result(
             "Evaluations",
             f"/evaluations/attempt/{'{id}'}",
             "GET",
-            "⚠️  SKIP",
+            "SKIP",
             "Requires attempt",
         )
         self.add_result(
             "Evaluations",
             f"/evaluations/test/{'{id}'}/attempts",
             "GET",
-            "⚠️  SKIP",
+            "SKIP",
             "Requires test",
         )
 
@@ -475,7 +475,7 @@ class EndpointTester:
     async def run_all_tests(self):
         """Run all endpoint tests"""
         print("\n" + "=" * 100)
-        print("AI STUDY ASSISTANT - COMPREHENSIVE API TESTING".center(100))
+        print("Agentic AI student support system - COMPREHENSIVE API TESTING".center(100))
         print("Testing all endpoints for frontend integration".center(100))
         print("=" * 100)
 

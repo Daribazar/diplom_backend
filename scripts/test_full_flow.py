@@ -9,9 +9,9 @@ BASE_URL = "http://localhost:8000/api/v1"
 
 
 async def test_complete_flow():
-    """Test complete AI Study Assistant flow."""
+    """Test complete Agentic AI student support system flow."""
     print("=" * 70)
-    print("AI STUDY ASSISTANT - COMPLETE SYSTEM TEST")
+    print("Agentic AI student support system - COMPLETE SYSTEM TEST")
     print("=" * 70)
 
     async with httpx.AsyncClient(timeout=60.0) as client:

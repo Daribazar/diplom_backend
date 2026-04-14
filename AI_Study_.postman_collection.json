@@ -1,7 +1,7 @@
 {
   "info": {
-    "name": "AI Study Assistant API",
-    "description": "Complete API collection for AI Study Assistant backend",
+    "name": "Agentic AI student support system API",
+    "description": "Complete API collection for Agentic AI student support system backend",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
