@@ -1,6 +1,7 @@
 """Lecture SQLAlchemy model."""
 
 from sqlalchemy import (
+    Boolean,
     Column,
     String,
     Integer,
@@ -33,6 +34,7 @@ class LectureModel(Base, TimestampMixin):
     status = Column(
         String(20), default="pending", nullable=False
     )  # pending, processing, completed, failed
+    is_visible = Column(Boolean, default=True, nullable=False, server_default="true")
 
     # JSONB columns for flexible data
     key_concepts = Column(JSONB, default=list)

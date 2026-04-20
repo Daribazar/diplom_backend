@@ -35,6 +35,7 @@ class UploadLectureUseCase:
         file_data: bytes,
         filename: str,
         user_id: str,
+        is_visible: bool = True,
     ) -> Lecture:
         """
         Upload lecture file.
@@ -102,6 +103,7 @@ class UploadLectureUseCase:
             file_url=file_url,
             content=content,
             status=STATUS_PENDING,
+            is_visible=is_visible,
         )
 
         # Save to database

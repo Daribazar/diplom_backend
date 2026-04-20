@@ -24,6 +24,7 @@ class LectureRepository:
             file_url=lecture.file_url,
             content=lecture.content,
             status=lecture.status,
+            is_visible=lecture.is_visible,
             key_concepts=lecture.key_concepts,
             embedding_ids=lecture.embedding_ids,
             metadata={},
@@ -80,6 +81,7 @@ class LectureRepository:
         db_lecture.title = lecture.title
         db_lecture.content = lecture.content
         db_lecture.status = lecture.status
+        db_lecture.is_visible = lecture.is_visible
         db_lecture.file_url = lecture.file_url
         db_lecture.key_concepts = lecture.key_concepts
         db_lecture.embedding_ids = lecture.embedding_ids
@@ -112,5 +114,6 @@ class LectureRepository:
             file_url=db_model.file_url,
             key_concepts=db_model.key_concepts or [],
             embedding_ids=db_model.embedding_ids or [],
+            is_visible=db_model.is_visible,
             created_at=db_model.created_at,
         )

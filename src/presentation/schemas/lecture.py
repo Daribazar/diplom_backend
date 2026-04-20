@@ -23,6 +23,7 @@ class LectureUploadResponse(BaseModel):
     week_number: int
     title: str
     status: ProcessingStatus
+    is_visible: bool = True
     message: str
     estimated_time: str = "2-3 minutes"
 
@@ -36,6 +37,7 @@ class LectureResponse(BaseModel):
     title: str
     status: ProcessingStatus
     key_concepts: List[str]
+    is_visible: bool = True
     created_at: datetime
 
     class Config:

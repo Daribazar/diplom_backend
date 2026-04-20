@@ -18,6 +18,7 @@ class Lecture:
     file_url: Optional[str] = None
     key_concepts: List[str] = field(default_factory=list)
     embedding_ids: List[str] = field(default_factory=list)
+    is_visible: bool = True
     created_at: Optional[datetime] = None
     processed_at: Optional[datetime] = None
 

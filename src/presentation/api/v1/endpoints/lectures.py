@@ -3,7 +3,16 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +67,7 @@ def _to_lecture_response(lecture) -> LectureResponse:
         title=lecture.title,
         status=lecture.status,
         key_concepts=lecture.key_concepts,
+        is_visible=lecture.is_visible,
         created_at=lecture.created_at,
     )
 
@@ -91,6 +101,7 @@ async def upload_lecture(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
     file: UploadFile = File(...),
+    is_visible: Annotated[bool, Form()] = True,
 ):
     """
     Upload lecture file (PDF).
@@ -135,6 +146,7 @@ async def upload_lecture(
             file_data=file_data,
             filename=file.filename,
             user_id=current_user.id,
+            is_visible=is_visible,
         )
 
         return LectureUploadResponse(
@@ -143,6 +155,7 @@ async def upload_lecture(
             week_number=lecture.week_number,
             title=lecture.title,
             status=lecture.status,
+            is_visible=lecture.is_visible,
             message="Lecture uploaded successfully. Processing in background.",
             estimated_time="2-3 minutes",
         )
@@ -275,6 +288,12 @@ async def get_lecture_file(
         ):
             raise UnauthorizedError("Access denied")
 
+        if not lecture.is_visible and current_user.role == "student":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Багш энэ лекцийг нууцалсан байна",
+            )
+
         file_path = (
             Path(settings.UPLOAD_DIR) / lecture.file_url if lecture.file_url else Path()
         )
@@ -285,5 +304,33 @@ async def get_lecture_file(
             media_type="application/pdf",
             filename=f"{lecture.title}.pdf",
         )
+    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+        raise map_common_domain_error(e)
+
+
+@router.patch(
+    "/{lecture_id}/visibility",
+    response_model=LectureResponse,
+    summary="Toggle lecture visibility",
+    description="Teacher (course owner) can show or hide a lecture from students.",
+)
+async def update_lecture_visibility(
+    lecture_id: str,
+    current_user: CurrentUser,
+    is_visible: Annotated[bool, Body(embed=True)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow the course owner to mark a lecture visible/hidden for students."""
+    lecture_repo, course_repo = _lecture_repositories(db)
+
+    try:
+        lecture = await _require_lecture(lecture_repo, lecture_id)
+        course = await course_repo.get_by_id(lecture.course_id)
+        if not course or course.owner_id != current_user.id:
+            raise UnauthorizedError("Only the course owner can change visibility")
+
+        lecture.is_visible = is_visible
+        updated = await lecture_repo.update(lecture)
+        return _to_lecture_response(updated)
     except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
         raise map_common_domain_error(e)
