@@ -1,63 +1,31 @@
 """Semantic text chunking service."""
 
-from typing import List
 import re
+from typing import List
 
 
 class SemanticChunker:
-    """Chunks text based on semantic meaning."""
+    """Split text into overlapping paragraph-based chunks."""
 
     def __init__(self, chunk_size: int = 1000, overlap: int = 200):
-        """
-        Initialize chunker.
-
-        Args:
-            chunk_size: Target size for each chunk
-            overlap: Overlap between chunks for context
-        """
         self.chunk_size = chunk_size
         self.overlap = overlap
 
     async def chunk_text(self, text: str) -> List[str]:
-        """
-        Chunk text into semantic segments.
+        """Return semantic chunks (paragraphs combined up to chunk_size)."""
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
 
-        Args:
-            text: Text to chunk
-
-        Returns:
-            List of text chunks
-        """
-        # Split by paragraphs first
-        paragraphs = re.split(r"\n\s*\n", text.strip())
-
-        chunks = []
-        current_chunk = ""
+        chunks: List[str] = []
+        current = ""
 
         for para in paragraphs:
-            para = para.strip()
-            if not para:
-                continue
-
-            # If adding paragraph exceeds chunk size
-            if len(current_chunk) + len(para) > self.chunk_size:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                    # Add overlap from end of current chunk
-                    overlap_text = (
-                        current_chunk[-self.overlap :]
-                        if len(current_chunk) > self.overlap
-                        else current_chunk
-                    )
-                    current_chunk = overlap_text + "\n\n" + para
-                else:
-                    # Single paragraph larger than chunk_size
-                    current_chunk = para
+            if current and len(current) + len(para) > self.chunk_size:
+                chunks.append(current.strip())
+                current = current[-self.overlap:] + "\n\n" + para
             else:
-                current_chunk += "\n\n" + para if current_chunk else para
+                current = f"{current}\n\n{para}" if current else para
 
-        # Add final chunk
-        if current_chunk:
-            chunks.append(current_chunk.strip())
+        if current:
+            chunks.append(current.strip())
 
         return chunks
