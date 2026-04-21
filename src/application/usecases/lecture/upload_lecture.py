@@ -7,7 +7,7 @@ from src.infrastructure.database.repositories.lecture_repository import (
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.processing.pdf_processor import PDFProcessor
 from src.domain.interfaces.storage_service import IStorageService
-from src.core.exceptions import NotFoundError, UnauthorizedError, DuplicateError
+from src.core.exceptions import NotFoundError, UnauthorizedError
 from src.core.utils import generate_id
 
 STATUS_PENDING = "pending"
@@ -42,7 +42,7 @@ class UploadLectureUseCase:
 
         Business rules:
         - User must own the course
-        - No duplicate lectures per week
+        - If a lecture already exists for the week, it is replaced
         - File must be PDF
 
         Args:
@@ -70,13 +70,17 @@ class UploadLectureUseCase:
         if course.owner_id != user_id:
             raise UnauthorizedError("You don't own this course")
 
-        # Check no duplicate
+        # Replace previous lecture for the same week, if any
         existing = await self.lecture_repo.get_by_course_and_week(
             course_id, week_number
         )
-
         if existing:
-            raise DuplicateError(f"Lecture already exists for week {week_number}")
+            if existing.file_url:
+                try:
+                    await self.storage.delete(existing.file_url)
+                except Exception:
+                    pass
+            await self.lecture_repo.delete(existing.id)
 
         # Upload file to storage
         file_url = await self.storage.upload(

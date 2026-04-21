@@ -16,10 +16,11 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.application.usecases.lecture.process_lecture import ProcessLectureUseCase
 from src.application.usecases.lecture.upload_lecture import UploadLectureUseCase
 from src.config import settings
 from src.core.dependencies import CurrentUser, get_db
-from src.core.exceptions import DuplicateError, NotFoundError, UnauthorizedError
+from src.core.exceptions import NotFoundError, UnauthorizedError
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.database.repositories.lecture_repository import (
     LectureRepository,
@@ -48,15 +49,22 @@ async def _require_lecture(lecture_repo: LectureRepository, lecture_id: str):
     return lecture
 
 
-def _require_file_path(lecture, file_path: Path) -> None:
-    if not lecture.file_url or not file_path.exists():
-        raise NotFoundError("Lecture file not found")
+async def _require_course_owner(
+    course_repo: CourseRepository, course_id: str, user_id: str
+):
+    course = await course_repo.get_by_id(course_id)
+    if not course or course.owner_id != user_id:
+        raise UnauthorizedError("Хичээлийн эзэн л үйлдэл хийх эрхтэй")
+    return course
 
 
 def _lecture_repositories(
     db: AsyncSession,
 ) -> tuple[LectureRepository, CourseRepository]:
     return LectureRepository(db), CourseRepository(db)
+
+
+DOMAIN_ERRORS = (NotFoundError, UnauthorizedError, ValueError, PermissionError)
 
 
 def _to_lecture_response(lecture) -> LectureResponse:
@@ -103,40 +111,22 @@ async def upload_lecture(
     file: UploadFile = File(...),
     is_visible: Annotated[bool, Form()] = True,
 ):
-    """
-    Upload lecture file (PDF).
-
-    - **course_id**: Course identifier
-    - **week_number**: Week number (1-16)
-    - **title**: Lecture title
-    - **file**: PDF file
-    """
-    # Validate file type
-    if not file.content_type == "application/pdf":
+    """Upload a PDF lecture. Replaces any existing lecture for the same week."""
+    if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only PDF files are supported",
         )
 
-    # Read file data
     file_data = await file.read()
-
-    # Check file size (10MB max)
     if len(file_data) > MAX_UPLOAD_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="File too large (max 10MB)",
         )
 
-    # Execute use case
     lecture_repo, course_repo = _lecture_repositories(db)
-    storage = LocalStorageService()
-
-    use_case = UploadLectureUseCase(
-        lecture_repo,
-        course_repo,
-        storage,
-    )
+    use_case = UploadLectureUseCase(lecture_repo, course_repo, LocalStorageService())
 
     try:
         lecture = await use_case.execute(
@@ -148,7 +138,6 @@ async def upload_lecture(
             user_id=current_user.id,
             is_visible=is_visible,
         )
-
         return LectureUploadResponse(
             id=lecture.id,
             course_id=lecture.course_id,
@@ -157,16 +146,8 @@ async def upload_lecture(
             status=lecture.status,
             is_visible=lecture.is_visible,
             message="Lecture uploaded successfully. Processing in background.",
-            estimated_time="2-3 minutes",
         )
-
-    except (
-        NotFoundError,
-        UnauthorizedError,
-        DuplicateError,
-        ValueError,
-        PermissionError,
-    ) as e:
+    except DOMAIN_ERRORS as e:
         raise map_common_domain_error(e)
 
 
@@ -209,26 +190,12 @@ async def process_lecture(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Process lecture through AI pipeline.
-
-    - Extracts key concepts
-    - Creates embeddings for RAG
-    - Updates lecture status
-    """
-    from src.application.usecases.lecture.process_lecture import ProcessLectureUseCase
-
-    use_case = ProcessLectureUseCase(db)
-
+    """Run AI pipeline (concepts + embeddings) on a lecture."""
     try:
-        result = await use_case.execute(lecture_id=lecture_id, user_id=current_user.id)
-        return {
-            "message": "Lecture processed successfully",
-            "lecture_id": result["lecture_id"],
-            "key_concepts": result["key_concepts"],
-            "chunks_created": result["chunks_created"],
-            "llm_usage": result["llm_usage"],
-        }
+        result = await ProcessLectureUseCase(db).execute(
+            lecture_id=lecture_id, user_id=current_user.id
+        )
+        return {"message": "Lecture processed successfully", **result}
     except Exception as e:
         raise map_common_domain_error(e)
 
@@ -244,26 +211,13 @@ async def get_lecture_status(
     current_user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Get lecture processing status.
-
-    Returns:
-    - pending: Waiting for processing
-    - processing: Currently being processed
-    - completed: Processing finished successfully
-    - failed: Processing failed
-    """
+    """Get lecture processing status (owner only)."""
     lecture_repo, course_repo = _lecture_repositories(db)
-
     try:
         lecture = await _require_lecture(lecture_repo, lecture_id)
-
-        course = await course_repo.get_by_id(lecture.course_id)
-        if not course or course.owner_id != current_user.id:
-            raise UnauthorizedError("Access denied")
-
+        await _require_course_owner(course_repo, lecture.course_id, current_user.id)
         return _to_lecture_status_response(lecture)
-    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+    except DOMAIN_ERRORS as e:
         raise map_common_domain_error(e)
 
 
@@ -280,11 +234,7 @@ async def get_lecture_file(
         lecture = await _require_lecture(lecture_repo, lecture_id)
 
         if not await has_course_access(
-            db,
-            course_repo,
-            lecture.course_id,
-            current_user.id,
-            current_user.role,
+            db, course_repo, lecture.course_id, current_user.id, current_user.role
         ):
             raise UnauthorizedError("Access denied")
 
@@ -294,17 +244,18 @@ async def get_lecture_file(
                 detail="Багш энэ лекцийг нууцалсан байна",
             )
 
-        file_path = (
-            Path(settings.UPLOAD_DIR) / lecture.file_url if lecture.file_url else Path()
-        )
-        _require_file_path(lecture, file_path)
+        if not lecture.file_url:
+            raise NotFoundError("Lecture file not found")
+        file_path = Path(settings.UPLOAD_DIR) / lecture.file_url
+        if not file_path.exists():
+            raise NotFoundError("Lecture file not found")
 
         return FileResponse(
             path=str(file_path),
             media_type="application/pdf",
             filename=f"{lecture.title}.pdf",
         )
-    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+    except DOMAIN_ERRORS as e:
         raise map_common_domain_error(e)
 
 
@@ -322,15 +273,36 @@ async def update_lecture_visibility(
 ):
     """Allow the course owner to mark a lecture visible/hidden for students."""
     lecture_repo, course_repo = _lecture_repositories(db)
-
     try:
         lecture = await _require_lecture(lecture_repo, lecture_id)
-        course = await course_repo.get_by_id(lecture.course_id)
-        if not course or course.owner_id != current_user.id:
-            raise UnauthorizedError("Only the course owner can change visibility")
-
+        await _require_course_owner(course_repo, lecture.course_id, current_user.id)
         lecture.is_visible = is_visible
-        updated = await lecture_repo.update(lecture)
-        return _to_lecture_response(updated)
-    except (NotFoundError, UnauthorizedError, ValueError, PermissionError) as e:
+        return _to_lecture_response(await lecture_repo.update(lecture))
+    except DOMAIN_ERRORS as e:
+        raise map_common_domain_error(e)
+
+
+@router.delete(
+    "/{lecture_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete lecture",
+    description="Delete a lecture (course owner only).",
+)
+async def delete_lecture(
+    lecture_id: str,
+    current_user: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Course owner can remove a wrongly uploaded lecture."""
+    lecture_repo, course_repo = _lecture_repositories(db)
+    try:
+        lecture = await _require_lecture(lecture_repo, lecture_id)
+        await _require_course_owner(course_repo, lecture.course_id, current_user.id)
+        if lecture.file_url:
+            try:
+                await LocalStorageService().delete(lecture.file_url)
+            except Exception:
+                pass
+        await lecture_repo.delete(lecture_id)
+    except DOMAIN_ERRORS as e:
         raise map_common_domain_error(e)
