@@ -188,7 +188,10 @@ Bloom's Taxonomy Level: {bloom_mapping[difficulty]}
 QUESTION QUALITY STANDARDS:
 - MCQ: Create 4 plausible options where distractors are reasonable but incorrect
 - True/False: Make statements clear, unambiguous, and test key concepts
-- Essay: Provide clear rubric with specific evaluation criteria
+- Essay: Provide a concrete model answer in `correct_answer` (a full sample answer
+  a top student would write, 3-6 sentences, in Mongolian). You may ALSO provide a
+  `rubric` object for grading guidance, but `correct_answer` is REQUIRED and must
+  be the actual model answer text, NOT the evaluation criteria.
 - All questions must be grammatically correct in Mongolian
 - Use proper Mongolian terminology for technical concepts
 
@@ -205,11 +208,29 @@ OUTPUT FORMAT (JSON only, no additional text):
             "difficulty": "easy",
             "bloom_level": "remember",
             "explanation": "Тайлбар монгол хэл дээр..."
+        }},
+        {{
+            "question_id": "q2",
+            "type": "essay",
+            "question_text": "Эссэ асуултын текст?",
+            "correct_answer": "Загвар хариулт: Энэ асуултад ... гэж бүрэн хариулна. Үндсэн санаануудыг дурдаж, жишээгээр баталгаажуулна.",
+            "points": 5,
+            "difficulty": "hard",
+            "bloom_level": "evaluate",
+            "explanation": "Нэмэлт тайлбар, гол санаанууд",
+            "rubric": {{
+                "excellent": "Бүх үндсэн санааг жишээтэйгээр тайлбарласан (5 оноо)",
+                "good": "Гол санааг тайлбарласан (4 оноо)",
+                "satisfactory": "Үндсэн ойлголт нэрлэсэн (3 оноо)"
+            }}
         }}
     ]
 }}
 
-IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON object."""
+IMPORTANT:
+- Output ONLY valid JSON. No markdown, no explanations, just the JSON object.
+- For essay questions, `correct_answer` MUST contain a concrete sample answer text,
+  never the rubric/criteria. The rubric goes into the separate `rubric` field."""
 
     def _build_user_prompt(
         self,
@@ -277,17 +298,7 @@ IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, just the JSON o
             questions = []
             for i, q_data in enumerate(questions_data):
                 try:
-                    question = Question(
-                        question_id=q_data["question_id"],
-                        type=QuestionType(q_data["type"]),
-                        question_text=q_data["question_text"],
-                        options=q_data.get("options"),
-                        correct_answer=q_data["correct_answer"],
-                        points=q_data["points"],
-                        difficulty=Difficulty(q_data["difficulty"]),
-                        bloom_level=q_data.get("bloom_level", "remember"),
-                        explanation=q_data.get("explanation", ""),
-                    )
+                    question = self._build_question(q_data)
                     questions.append(question)
                 except Exception as e:
                     logger.error(

@@ -169,6 +169,11 @@ class GenerateTestUseCase:
             result.total_points,
         )
 
+        if not result.questions:
+            raise ValueError(
+                "AI асуулт үүсгэж чадсангүй. Дахин оролдоно уу."
+            )
+
         # Create Test entity
         test = Test(
             id=generate_id("test"),

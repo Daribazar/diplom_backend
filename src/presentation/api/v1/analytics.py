@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -327,3 +327,59 @@ async def get_course_performance(
         )
 
     return performance_data
+
+
+SUBMITTED_STATUSES = ("submitted", "graded")
+
+
+@router.get("/course/{course_id}/weekly-averages")
+async def get_course_weekly_averages(
+    course_id: str,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Teacher-only: average percentage of first attempts grouped by week."""
+    course = await db.get(CourseModel, course_id)
+    if not course or course.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Зөвхөн хичээлийн эзэн үзэх боломжтой",
+        )
+
+    query = (
+        select(
+            LectureModel.week_number,
+            StudentAttemptModel.student_id,
+            StudentAttemptModel.percentage,
+        )
+        .join(TestModel, TestModel.id == StudentAttemptModel.test_id)
+        .join(LectureModel, LectureModel.id == TestModel.lecture_id)
+        .where(
+            LectureModel.course_id == course_id,
+            StudentAttemptModel.status.in_(SUBMITTED_STATUSES),
+        )
+        .order_by(
+            LectureModel.week_number,
+            StudentAttemptModel.student_id,
+            StudentAttemptModel.created_at.asc(),
+        )
+    )
+    rows = (await db.execute(query)).all()
+
+    # Keep only the first attempt per (week, student)
+    first_scores: dict[tuple[int, str], float] = {}
+    for week, student_id, percentage in rows:
+        first_scores.setdefault((week, student_id), percentage or 0.0)
+
+    weekly: dict[int, list[float]] = {}
+    for (week, _), score in first_scores.items():
+        weekly.setdefault(week, []).append(score)
+
+    return [
+        {
+            "week_number": week,
+            "average_percentage": round_score(sum(scores) / len(scores)),
+            "student_count": len(scores),
+        }
+        for week, scores in sorted(weekly.items())
+    ]

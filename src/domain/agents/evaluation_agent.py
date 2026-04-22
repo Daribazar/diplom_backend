@@ -158,11 +158,84 @@ class EvaluationAgent:
             feedback="Зөв!" if is_correct else f"Буруу. Зөв хариулт: {display_correct}",
         )
 
+    @staticmethod
+    def _essay_reference_answer(question: Dict) -> str:
+        """Build a human-readable reference answer for an essay question.
+
+        Resolution order:
+        1. ``correct_answer`` field if it is a concrete model answer (plain text).
+        2. ``explanation`` field (key points / notes).
+        3. ``rubric`` field formatted as labelled criteria.
+        4. ``correct_answer`` field if it actually stores a rubric (legacy data),
+           formatted for display.
+        """
+
+        def _format_rubric(rubric: Dict) -> str:
+            order = ["excellent", "good", "satisfactory", "poor"]
+            keys = [k for k in order if k in rubric] + [
+                k for k in rubric if k not in order
+            ]
+            label_map = {
+                "excellent": "Маш сайн",
+                "good": "Сайн",
+                "satisfactory": "Дундаж",
+                "poor": "Сул",
+            }
+            lines = []
+            for k in keys:
+                value = rubric[k]
+                if isinstance(value, (list, tuple)):
+                    value = "; ".join(str(v) for v in value)
+                label = label_map.get(k, str(k).capitalize())
+                lines.append(f"{label}: {value}")
+            return "\n".join(lines)
+
+        raw = question.get("correct_answer")
+        correct_is_rubric = False
+        correct_text = ""
+
+        if raw:
+            candidate = raw
+            if isinstance(raw, str):
+                try:
+                    candidate = json.loads(raw)
+                except (ValueError, TypeError):
+                    candidate = raw.strip()
+            if isinstance(candidate, dict):
+                correct_is_rubric = True
+                correct_rubric = candidate
+            elif isinstance(candidate, str):
+                correct_text = candidate.strip()
+            else:
+                correct_text = str(candidate).strip()
+
+        # 1. Concrete model answer from correct_answer
+        if correct_text:
+            return correct_text
+
+        # 2. Explanation as fallback
+        explanation = (question.get("explanation") or "").strip()
+        if explanation:
+            return explanation
+
+        # 3. Dedicated rubric field
+        rubric_field = question.get("rubric")
+        if isinstance(rubric_field, dict) and rubric_field:
+            return "Үнэлгээний шалгуур:\n" + _format_rubric(rubric_field)
+
+        # 4. Legacy: rubric stored in correct_answer
+        if correct_is_rubric:
+            return "Үнэлгээний шалгуур:\n" + _format_rubric(correct_rubric)
+
+        return ""
+
     async def _grade_essay(self, question: Dict, student_answer: str) -> QuestionResult:
         """AI-grade essay question."""
         # Ensure student_answer is string
         if not isinstance(student_answer, str):
             student_answer = str(student_answer)
+
+        reference_answer = self._essay_reference_answer(question)
 
         system_prompt = """You are an expert educational evaluator.
 Grade the student's essay answer based on the rubric provided.
@@ -215,7 +288,7 @@ Grade this answer according to the rubric. Be fair and constructive."""
             return QuestionResult(
                 question_id=question["question_id"],
                 student_answer=student_answer,
-                correct_answer="(Essay - see feedback)",
+                correct_answer=reference_answer or "(Эссэ - тайлбарыг үзнэ үү)",
                 is_correct=is_correct,
                 points_earned=points_earned,
                 max_points=question["points"],
@@ -228,7 +301,7 @@ Grade this answer according to the rubric. Be fair and constructive."""
             return QuestionResult(
                 question_id=question["question_id"],
                 student_answer=student_answer,
-                correct_answer="(Essay - AI grading failed)",
+                correct_answer=reference_answer or "(Эссэ - AI үнэлгээ хийгдсэнгүй)",
                 is_correct=False,
                 points_earned=points_earned,
                 max_points=question["points"],

@@ -85,14 +85,22 @@ async def _require_owned_attempt(
     return attempt
 
 
+_ESSAY_PLACEHOLDERS = {
+    "(Essay - see feedback)",
+    "(Essay - AI grading failed)",
+}
+
+
 def _enrich_attempt_answers(
     attempt_answers: list, test
 ) -> list[QuestionResultResponse]:
-    """Fill missing question_text in attempt answers from test payload."""
+    """Fill missing question_text and essay correct_answer from test payload."""
     enriched_answers: list[QuestionResultResponse] = []
     for answer_item in attempt_answers:
         answer = dict(answer_item)
-        if not answer.get("question_text") and test:
+
+        question = None
+        if test:
             question = next(
                 (
                     q
@@ -101,9 +109,23 @@ def _enrich_attempt_answers(
                 ),
                 None,
             )
+
+        if not answer.get("question_text"):
             answer["question_text"] = (
                 question.get("question_text", "") if question else ""
             )
+
+        # Backfill essay correct_answer for older attempts that stored
+        # the "(Essay - see feedback)" placeholder.
+        current_correct = (answer.get("correct_answer") or "").strip()
+        if question and (
+            not current_correct or current_correct in _ESSAY_PLACEHOLDERS
+        ):
+            if question.get("type") == "essay":
+                reference = EvaluationAgent._essay_reference_answer(question)
+                if reference:
+                    answer["correct_answer"] = reference
+
         enriched_answers.append(QuestionResultResponse(**answer))
     return enriched_answers
 
