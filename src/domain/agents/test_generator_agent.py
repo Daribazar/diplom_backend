@@ -93,44 +93,34 @@ class TestGeneratorAgent:
         Returns:
             TestGenerationResult
         """
-        # Step 1: RAG - Retrieve context
-        query = "lecture content, key concepts, examples, definitions"
-        context_chunks = await self.retriever.retrieve_for_test_generation(
-            lecture_ids=lecture_ids, topic=query, top_k=5
+        context = await self.retriever.retrieve_for_test_generation(
+            lecture_ids=lecture_ids,
+            topic="lecture content, key concepts, examples, definitions",
+            top_k=5,
         )
+        if not context or not context.strip():
+            logger.warning("No context for lectures=%s, using fallback", lecture_ids)
+            context = "This is a lecture about neural networks, machine learning, and deep learning concepts."
 
-        # Log context retrieval
-        logger.info(
-            "Retrieved context chunks length=%s",
-            len(context_chunks) if context_chunks else 0,
-        )
-
-        if not context_chunks or len(context_chunks.strip()) == 0:
-            logger.warning("No context found for lectures=%s", lecture_ids)
-            # Use fallback context for mock generation
-            context_chunks = "This is a lecture about neural networks, machine learning, and deep learning concepts."
-
-        # Step 2: Generate questions
         questions = await self._generate_questions(
-            context=context_chunks,
+            context=context,
             difficulty=difficulty,
             question_types=question_types,
             question_count=question_count,
         )
 
-        # Step 3: Validate quality
-        validated_questions = self._validate_questions(questions)
-
-        # Step 4: Calculate points
-        total_points = sum(q.points for q in validated_questions)
+        allowed = set(question_types)
+        validated = [
+            q for q in self._validate_questions(questions) if q.type in allowed
+        ]
 
         return TestGenerationResult(
-            questions=validated_questions,
-            total_points=total_points,
+            questions=validated,
+            total_points=sum(q.points for q in validated),
             metadata={
                 "difficulty": difficulty.value,
-                "question_count": len(validated_questions),
-                "context_chunks": len(context_chunks),
+                "question_count": len(validated),
+                "context_chunks": len(context),
             },
         )
 
@@ -142,63 +132,19 @@ class TestGeneratorAgent:
         question_count: int,
     ) -> List[Question]:
         """Generate questions using LLM with RAG context."""
-        # Build system prompt
-        system_prompt = self._build_system_prompt(difficulty)
-
-        # Build user prompt with context
-        user_prompt = self._build_user_prompt(
-            context_text=context,
-            difficulty=difficulty,
-            question_types=question_types,
-            question_count=question_count,
-        )
-
-        # LLM generation
         response = await self.llm.complete(
-            prompt=user_prompt,
-            system_prompt=system_prompt,
+            prompt=self._build_user_prompt(
+                context, difficulty, question_types, question_count
+            ),
+            system_prompt=self._build_system_prompt(difficulty, question_types),
             temperature=0.7,
-            max_tokens=4000,  # Increased for longer questions
+            max_tokens=4000,
         )
+        return self._parse_questions(response.content)
 
-        # Parse JSON response
-        questions = self._parse_questions(response.content)
-
-        return questions
-
-    def _build_system_prompt(self, difficulty: Difficulty) -> str:
-        """Build system prompt based on difficulty."""
-        bloom_mapping = {
-            Difficulty.EASY: "Remember and Understand (recall facts, explain concepts)",
-            Difficulty.MEDIUM: "Apply and Analyze (use knowledge, break down problems)",
-            Difficulty.HARD: "Evaluate and Create (judge, design, synthesize)",
-        }
-
-        return f"""You are an expert educational assessment designer specializing in creating high-quality test questions.
-
-CRITICAL REQUIREMENTS:
-1. Generate questions in MONGOLIAN language (Монгол хэл)
-2. Questions MUST be based ONLY on the provided lecture material
-3. Answers MUST be factually correct according to the context
-4. Create realistic and challenging questions that test true understanding
-
-Difficulty Level: {difficulty.value.upper()}
-Bloom's Taxonomy Level: {bloom_mapping[difficulty]}
-
-QUESTION QUALITY STANDARDS:
-- MCQ: Create 4 plausible options where distractors are reasonable but incorrect
-- True/False: Make statements clear, unambiguous, and test key concepts
-- Essay: Provide a concrete model answer in `correct_answer` (a full sample answer
-  a top student would write, 3-6 sentences, in Mongolian). You may ALSO provide a
-  `rubric` object for grading guidance, but `correct_answer` is REQUIRED and must
-  be the actual model answer text, NOT the evaluation criteria.
-- All questions must be grammatically correct in Mongolian
-- Use proper Mongolian terminology for technical concepts
-
-OUTPUT FORMAT (JSON only, no additional text):
-{{
-    "questions": [
-        {{
+    # JSON examples per question type, used to compose system prompt dynamically.
+    _TYPE_EXAMPLES = {
+        QuestionType.MCQ: """{
             "question_id": "q1",
             "type": "mcq",
             "question_text": "Асуултын текст монгол хэл дээр?",
@@ -208,9 +154,20 @@ OUTPUT FORMAT (JSON only, no additional text):
             "difficulty": "easy",
             "bloom_level": "remember",
             "explanation": "Тайлбар монгол хэл дээр..."
-        }},
-        {{
-            "question_id": "q2",
+        }""",
+        QuestionType.TRUE_FALSE: """{
+            "question_id": "q1",
+            "type": "true_false",
+            "question_text": "Мэдэгдэл монгол хэл дээр.",
+            "options": ["Үнэн", "Худал"],
+            "correct_answer": "Үнэн",
+            "points": 1,
+            "difficulty": "easy",
+            "bloom_level": "remember",
+            "explanation": "Яагаад үнэн/худал болохыг тайлбарла..."
+        }""",
+        QuestionType.ESSAY: """{
+            "question_id": "q1",
             "type": "essay",
             "question_text": "Эссэ асуултын текст?",
             "correct_answer": "Загвар хариулт: Энэ асуултад ... гэж бүрэн хариулна. Үндсэн санаануудыг дурдаж, жишээгээр баталгаажуулна.",
@@ -218,19 +175,76 @@ OUTPUT FORMAT (JSON only, no additional text):
             "difficulty": "hard",
             "bloom_level": "evaluate",
             "explanation": "Нэмэлт тайлбар, гол санаанууд",
-            "rubric": {{
+            "rubric": {
                 "excellent": "Бүх үндсэн санааг жишээтэйгээр тайлбарласан (5 оноо)",
                 "good": "Гол санааг тайлбарласан (4 оноо)",
                 "satisfactory": "Үндсэн ойлголт нэрлэсэн (3 оноо)"
-            }}
-        }}
+            }
+        }""",
+    }
+
+    _TYPE_QUALITY_RULES = {
+        QuestionType.MCQ: "- MCQ: Create 4 plausible options where distractors are reasonable but incorrect. Set `options` to 4 strings and `correct_answer` to one of them.",
+        QuestionType.TRUE_FALSE: '- True/False: Make statements clear and unambiguous. `options` MUST be exactly ["Үнэн", "Худал"] and `correct_answer` MUST be one of those two strings.',
+        QuestionType.ESSAY: "- Essay: Provide a concrete model answer in `correct_answer` (3-6 sentences in Mongolian). You may ALSO provide a `rubric` object, but `correct_answer` is REQUIRED.",
+    }
+
+    def _build_system_prompt(
+        self, difficulty: Difficulty, question_types: List[QuestionType]
+    ) -> str:
+        """Build system prompt based on difficulty and requested question types."""
+        bloom_mapping = {
+            Difficulty.EASY: "Remember and Understand (recall facts, explain concepts)",
+            Difficulty.MEDIUM: "Apply and Analyze (use knowledge, break down problems)",
+            Difficulty.HARD: "Evaluate and Create (judge, design, synthesize)",
+        }
+
+        allowed_types_str = ", ".join(t.value for t in question_types)
+        quality_rules = "\n".join(
+            self._TYPE_QUALITY_RULES[t] for t in question_types
+        )
+        examples = ",\n        ".join(
+            self._TYPE_EXAMPLES[t] for t in question_types
+        )
+
+        return f"""You are an expert educational assessment designer specializing in creating high-quality test questions.
+
+CRITICAL REQUIREMENTS:
+1. Generate questions in MONGOLIAN language (Монгол хэл)
+2. Questions MUST be based ONLY on the provided lecture material
+3. Answers MUST be factually correct according to the context
+4. Create realistic and challenging questions that test true understanding
+5. ALLOWED QUESTION TYPES: ONLY {allowed_types_str}. DO NOT generate any other type. Every question's `type` field MUST be one of: {allowed_types_str}.
+
+Difficulty Level: {difficulty.value.upper()}
+Bloom's Taxonomy Level: {bloom_mapping[difficulty]}
+
+QUESTION QUALITY STANDARDS:
+{quality_rules}
+- All questions must be grammatically correct in Mongolian
+- Use proper Mongolian terminology for technical concepts
+
+OUTPUT FORMAT (JSON only, no additional text):
+{{
+    "questions": [
+        {examples}
     ]
 }}
 
 IMPORTANT:
 - Output ONLY valid JSON. No markdown, no explanations, just the JSON object.
+- EVERY question's `type` field MUST be one of: {allowed_types_str}. No exceptions.
 - For essay questions, `correct_answer` MUST contain a concrete sample answer text,
-  never the rubric/criteria. The rubric goes into the separate `rubric` field."""
+  never the rubric/criteria."""
+
+    # ~4 chars/token; keep total prompt under provider TPM limits (Groq free 12K).
+    MAX_CONTEXT_CHARS = 10000
+
+    _TYPE_LABELS_MN = {
+        QuestionType.MCQ: "Олон сонголттой (MCQ)",
+        QuestionType.TRUE_FALSE: "Үнэн/Худал",
+        QuestionType.ESSAY: "Эссэ",
+    }
 
     def _build_user_prompt(
         self,
@@ -240,32 +254,53 @@ IMPORTANT:
         question_count: int,
     ) -> str:
         """Build user prompt with context."""
-        types_str = ", ".join([t.value for t in question_types])
+        types_str = ", ".join(t.value for t in question_types)
+        types_mn = ", ".join(self._TYPE_LABELS_MN[t] for t in question_types)
 
-        # Map question types to Mongolian
-        type_mapping = {
-            "mcq": "Олон сонголттой (MCQ)",
-            "true_false": "Үнэн/Худал",
-            "essay": "Эссэ",
-        }
-        types_mongolian = ", ".join(
-            [type_mapping.get(t.value, t.value) for t in question_types]
-        )
+        context = context_text[: self.MAX_CONTEXT_CHARS]
+        if len(context_text) > self.MAX_CONTEXT_CHARS:
+            context += "\n...[материал тасалсан]"
 
-        return f"""Дараах хичээлийн материал дээр үндэслэн {question_count} асуулт үүсгэнэ үү.
+        return f"""Дараах хичээлийн материал дээр үндэслэн ЯГ {question_count} асуулт үүсгэнэ үү.
 
 ХИЧЭЭЛИЙН МАТЕРИАЛ:
-{context_text}
+{context}
 
 ШААРДЛАГА:
-- Асуултын төрөл: {types_mongolian} ({types_str})
+- Зөвшөөрөгдсөн асуултын төрөл: {types_mn} (`type` талбарт зөвхөн: {types_str})
+- Бусад төрөл огт оруулж БОЛОХГҮЙ
+- Бүх {question_count} асуулт {types_str} төрлийн байх ёстой
 - Хүндрэл: {difficulty.value}
-- Нийт асуулт: {question_count}
-- Оноо: MCQ (2 оноо), Үнэн/Худал (1 оноо), Эссэ (3-5 оноо)
 - Бүх асуулт МОНГОЛ хэл дээр байх ёстой
 - Асуултууд хичээлийн материалд үндэслэсэн байх ёстой
 
 Асуултуудыг JSON форматаар үүсгэнэ үү:"""
+
+    @staticmethod
+    def _extract_correct_answer(q_data: Dict) -> str:
+        """Return correct_answer as a string, with rubric fallback for essays."""
+        if "correct_answer" in q_data and q_data["correct_answer"] is not None:
+            return str(q_data["correct_answer"])
+        if q_data.get("type") == QuestionType.ESSAY.value:
+            rubric = q_data.get("rubric")
+            if rubric is not None:
+                return json.dumps(rubric, ensure_ascii=False)
+            return ""
+        raise KeyError("correct_answer")
+
+    def _build_question(self, q_data: Dict) -> Question:
+        """Build a Question from raw LLM JSON data."""
+        return Question(
+            question_id=q_data["question_id"],
+            type=QuestionType(q_data["type"]),
+            question_text=q_data["question_text"],
+            options=q_data.get("options"),
+            correct_answer=self._extract_correct_answer(q_data),
+            points=q_data["points"],
+            difficulty=Difficulty(q_data["difficulty"]),
+            bloom_level=q_data.get("bloom_level", "remember"),
+            explanation=q_data.get("explanation", ""),
+        )
 
     def _parse_questions(self, llm_response: str) -> List[Question]:
         """Parse LLM response to Question objects."""

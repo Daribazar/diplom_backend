@@ -1,4 +1,3 @@
-import redis
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,22 +59,13 @@ async def _check_db(db: AsyncSession) -> str:
         return f"error: {e}"
 
 
-def _check_redis() -> str:
-    try:
-        redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=1).ping()
-        return "connected"
-    except Exception:
-        return "disconnected"
-
-
 @app.get("/health")
 async def health(db: AsyncSession = Depends(get_db)):
-    """Readiness probe with DB + Redis connectivity."""
+    """Readiness probe — DB connectivity."""
     db_status = await _check_db(db)
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
-        "redis": _check_redis(),
     }
 
 

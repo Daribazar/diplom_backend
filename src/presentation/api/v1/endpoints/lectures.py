@@ -126,7 +126,7 @@ async def upload_lecture(
         )
 
     lecture_repo, course_repo = _lecture_repositories(db)
-    use_case = UploadLectureUseCase(lecture_repo, course_repo, LocalStorageService())
+    use_case = UploadLectureUseCase(db, lecture_repo, course_repo, LocalStorageService())
 
     try:
         lecture = await use_case.execute(
@@ -145,7 +145,7 @@ async def upload_lecture(
             title=lecture.title,
             status=lecture.status,
             is_visible=lecture.is_visible,
-            message="Lecture uploaded successfully. Processing in background.",
+            message="Lecture uploaded and processed successfully.",
         )
     except DOMAIN_ERRORS as e:
         raise map_common_domain_error(e)

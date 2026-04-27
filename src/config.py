@@ -19,22 +19,22 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     DATABASE_ECHO: bool = False
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     # JWT
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 өдөр (30 * 24 * 60)
 
     # OpenAI
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
 
     # Anthropic
-    ANTHROPIC_API_KEY: str
+    ANTHROPIC_API_KEY: str = ""
+
+    # Groq (OpenAI-compatible, free tier)
+    GROQ_API_KEY: str = ""
 
     # LLM
-    DEFAULT_LLM_PROVIDER: str = "openai"  # "openai" or "claude"
+    DEFAULT_LLM_PROVIDER: str = "openai"  # "openai" | "claude" | "groq" | "mock"
 
     # File Upload
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB

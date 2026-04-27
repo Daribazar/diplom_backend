@@ -27,7 +27,7 @@ class LectureRepository:
             is_visible=lecture.is_visible,
             key_concepts=lecture.key_concepts,
             embedding_ids=lecture.embedding_ids,
-            metadata={},
+            lecture_metadata={},
         )
         self.session.add(db_lecture)
         await self.session.flush()

@@ -1,28 +1,31 @@
 """Upload lecture use case."""
 
+import logging
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.domain.entities.lecture import Lecture
-from src.infrastructure.database.repositories.lecture_repository import (
-    LectureRepository,
-)
+from src.infrastructure.database.repositories.lecture_repository import LectureRepository
 from src.infrastructure.database.repositories.course_repository import CourseRepository
 from src.infrastructure.processing.pdf_processor import PDFProcessor
 from src.domain.interfaces.storage_service import IStorageService
 from src.core.exceptions import NotFoundError, UnauthorizedError
 from src.core.utils import generate_id
 
+logger = logging.getLogger(__name__)
+
 STATUS_PENDING = "pending"
 
 
 class UploadLectureUseCase:
-    """Use case: Upload lecture file."""
-
     def __init__(
         self,
+        db: AsyncSession,
         lecture_repository: LectureRepository,
         course_repository: CourseRepository,
         storage_service: IStorageService,
     ):
-        """Initialize use case with repositories and storage."""
+        self.db = db
         self.lecture_repo = lecture_repository
         self.course_repo = course_repository
         self.storage = storage_service
@@ -37,68 +40,35 @@ class UploadLectureUseCase:
         user_id: str,
         is_visible: bool = True,
     ) -> Lecture:
-        """
-        Upload lecture file.
-
-        Business rules:
-        - User must own the course
-        - If a lecture already exists for the week, it is replaced
-        - File must be PDF
-
-        Args:
-            course_id: Course ID
-            week_number: Week number (1-16)
-            title: Lecture title
-            file_data: File content as bytes
-            filename: Original filename
-            user_id: User ID uploading
-
-        Returns:
-            Created Lecture entity
-
-        Raises:
-            NotFoundError: If course doesn't exist
-            UnauthorizedError: If user doesn't own course
-            DuplicateError: If lecture already exists for week
-        """
-        # Check course exists and user owns it
         course = await self.course_repo.get_by_id(course_id)
-
         if not course:
             raise NotFoundError(f"Course {course_id} not found")
-
         if course.owner_id != user_id:
             raise UnauthorizedError("You don't own this course")
 
-        # Replace previous lecture for the same week, if any
-        existing = await self.lecture_repo.get_by_course_and_week(
-            course_id, week_number
-        )
+        existing = await self.lecture_repo.get_by_course_and_week(course_id, week_number)
         if existing:
             if existing.file_url:
                 try:
                     await self.storage.delete(existing.file_url)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Failed to delete previous lecture file: %s", e)
             await self.lecture_repo.delete(existing.id)
+            await self.db.commit()
 
-        # Upload file to storage
         file_url = await self.storage.upload(
             file_data=file_data,
             filename=f"lecture_w{week_number}_{generate_id()[:8]}.pdf",
             folder=f"courses/{course_id}/lectures",
         )
 
-        # Extract text from PDF
         content = ""
         try:
             content = await PDFProcessor().extract_text(file_data)
-        except Exception:
-            # If PDF extraction fails, continue without content
-            # Processing will fail but lecture will be saved
+        except Exception as e:
+            logger.warning("PDF text extraction failed for %s: %s", filename, e)
             content = ""
 
-        # Create lecture entity
         lecture = Lecture(
             id=generate_id("lec"),
             course_id=course_id,
@@ -109,15 +79,26 @@ class UploadLectureUseCase:
             status=STATUS_PENDING,
             is_visible=is_visible,
         )
-
-        # Save to database
         created_lecture = await self.lecture_repo.create(lecture)
+        # Persist the lecture immediately so it remains visible even if AI
+        # processing fails downstream.
+        await self.db.commit()
 
-        # Trigger background processing with Celery
-        from src.infrastructure.queue.tasks.lecture_processing import (
-            process_lecture_task,
-        )
+        if not content:
+            logger.info(
+                "Skipping AI processing for lecture %s: empty content", created_lecture.id
+            )
+            return created_lecture
 
-        process_lecture_task.delay(lecture_id=created_lecture.id)
+        from src.application.usecases.lecture.process_lecture import ProcessLectureUseCase
+        try:
+            await ProcessLectureUseCase(self.db).execute(
+                lecture_id=created_lecture.id,
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.exception("AI processing failed for lecture %s: %s", created_lecture.id, e)
 
-        return created_lecture
+        # Reload to reflect any status updates from processing.
+        refreshed = await self.lecture_repo.get_by_id(created_lecture.id)
+        return refreshed or created_lecture
